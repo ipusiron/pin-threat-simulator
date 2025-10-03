@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PIN Threat Simulator - PIN認証攻撃シミュレーター</title>
+  <link rel="stylesheet" href="style.css" />
+  <meta name="description" content="PIN認証の脆弱性を学ぶための教育用Webシミュレーター。指紋解析、熱解析、音響解析などの攻撃手法と防御策を安全に体験できます。" />
+  <meta name="robots" content="index, follow" />
+  <meta name="author" content="ipusiron" />
+  <meta name="keywords" content="PIN,セキュリティ,教育,シミュレーター,認証,サイバーセキュリティ" />
+
+  <!-- Security Headers -->
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+  <meta name="referrer" content="no-referrer-when-downgrade" />
+
+  <!-- Educational Disclaimer -->
+  <meta property="og:title" content="PIN Threat Simulator - 教育用" />
+  <meta property="og:description" content="⚠️ 教育目的専用：PIN認証の脆弱性を安全に学習するためのシミュレーター" />
+  <meta property="og:type" content="website" />
+</head>
+<body>
+  <header class="header">
+    <div class="title">
+      <h1>PIN Threat Simulator</h1>
+      <p class="subtitle">PIN認証の攻撃手法と防御策を学ぶための教育用シミュレーター</p>
+    </div>
+    <div class="actions">
+      <button class="theme-toggle" id="theme-toggle" title="テーマ切り替え">🌙</button>
+      <button id="download-json" title="計算設定とシミュレーション結果を含む全セッションデータをJSONでエクスポート">セッションをエクスポート (JSON)</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Main Tabs">
+    <button class="tab active" data-tab="calc" role="tab" aria-selected="true">PINパターン計算</button>
+    <button class="tab" data-tab="sim" role="tab" aria-selected="false">攻撃シミュレーション</button>
+    <button class="tab" data-tab="sec" role="tab" aria-selected="false">セキュリティ解説</button>
+  </nav>
+
+  <main class="main">
+    <!-- TAB: PINパターン計算 -->
+    <section id="tab-calc" class="tab-panel">
+      <div class="panel two-col">
+        <div class="card">
+          <div class="label-with-help">
+            <label>候補数字集合 (click to toggle)</label>
+            <div class="tooltip-wrapper">
+              <span class="help-icon">?</span>
+              <div class="tooltip">攻撃で検出された可能性のある数字を選択します。<br>クリックで選択/解除を切り替えます。</div>
+            </div>
+          </div>
+          <div id="digit-pick" class="digit-pick">
+            <!-- digits 0-9 -->
+          </div>
+
+          <div class="form-row">
+            <div class="label-with-help">
+              <label for="pin-length">PIN桁数</label>
+              <div class="tooltip-wrapper">
+                <span class="help-icon">?</span>
+                <div class="tooltip">PINコードの桁数を指定します。<br>音響解析などで桁数が推定できている場合に設定します。</div>
+              </div>
+            </div>
+            <input id="pin-length" type="number" min="1" max="8" value="4" />
+          </div>
+
+          <div class="form-row">
+            <div class="label-with-help">
+              <label>モード</label>
+              <div class="tooltip-wrapper">
+                <span class="help-icon">?</span>
+                <div class="tooltip">
+                  <strong>許容集合:</strong> 選択した数字のみ使用可能<br>
+                  <strong>必須包含:</strong> 選択した数字をすべて含む<br>
+                  <strong>部分特定:</strong> 選択した数字が可能性あり（0-9すべて許容）
+                </div>
+              </div>
+            </div>
+            <select id="mode">
+              <option value="allowed">許容集合モード（候補集合以外不可）</option>
+              <option value="must">必須包含モード（候補集合をすべて含む）</option>
+              <option value="partial">部分特定モード（候補集合は可能性あり）</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <div class="label-with-help">
+              <label><input type="checkbox" id="allow-dup" checked /> 重複を許可</label>
+              <div class="tooltip-wrapper">
+                <span class="help-icon">?</span>
+                <div class="tooltip">同じ数字を複数回使用できるかを設定します。例：1111や1234など。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="label-with-help">
+              <label for="wildcards">ワイルドカード桁</label>
+              <div class="tooltip-wrapper">
+                <span class="help-icon">?</span>
+                <div class="tooltip">特定の位置の数字が分かっている場合に使用します。<br>カンマ区切りで指定し、不明な桁は「*」を使います。<br>例：*,*,2,* は3桁目が2で他は不明</div>
+              </div>
+            </div>
+            <input id="wildcards" type="text" placeholder="例: *,*,2,*" />
+          </div>
+
+          <div class="buttons">
+            <button id="calc-btn" class="primary">計算する</button>
+            <button id="clear-calc">クリア</button>
+            <button id="use-from-sim">攻撃シミュレーション結果を使う</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>結果</h3>
+          <div class="result-row"><strong>候補総数:</strong> <span id="result-count">—</span></div>
+          <div class="result-row"><strong>推定桁数:</strong> <span id="result-length">—</span></div>
+          <div class="form-row">
+            <label><input type="checkbox" id="show-steps" /> 計算過程を表示（教育用）</label>
+          </div>
+          <div id="calculation-steps" class="steps"></div>
+
+          <!-- 候補一覧フレーム -->
+          <div class="candidates-frame">
+            <div class="candidates-header">
+              <h4>候補一覧</h4>
+              <button id="download-csv" class="csv-export-btn" title="候補一覧をCSVでエクスポート">CSV</button>
+            </div>
+            <div id="candidates" class="candidates"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: 攻撃シミュレーション -->
+    <section id="tab-sim" class="tab-panel hidden">
+      <div class="sim-layout">
+        <!-- 左側：各攻撃手法 -->
+        <div class="attack-methods">
+          <!-- 指紋解析 -->
+          <div class="card attack-card">
+            <div class="label-with-help">
+              <h3>🔍 指紋解析</h3>
+              <div class="tooltip-wrapper">
+                <span class="help-icon">?</span>
+                <div class="tooltip">テンキー上の指紋や皮脂の痕跡から、どのキーが押されたかを推定します。<br>各キーをクリックして濃度（0-100）を変更できます。</div>
+              </div>
+            </div>
+            <div id="finger-grid" class="finger-grid"></div>
+            <div class="form-row">
+              <label for="finger-threshold">検出閾値 (>=)</label>
+              <input id="finger-threshold" type="number" min="0" max="100" value="30" />
+            </div>
+            <div class="buttons">
+              <button id="analyze-finger" class="primary">解析</button>
+              <button id="clear-finger">クリア</button>
+            </div>
+            <div id="finger-result" class="result-box"></div>
+          </div>
+
+          <!-- 熱解析 -->
+          <div class="card attack-card">
+            <div class="label-with-help">
+              <h3>🌡️ 熱解析</h3>
+              <div class="tooltip-wrapper">
+                <span class="help-icon">?</span>
+                <div class="tooltip">サーマルカメラで入力直後の温度変化を検出します。<br>押されたキーは温度が高く、時間とともに冷却します。</div>
+              </div>
+            </div>
+            <p style="color:var(--muted);font-size:12px;margin:8px 0">テンキーをクリックしてPINを入力 → 経過時間スライダーで温度減衰を確認</p>
+            <div id="thermal-keypad" class="finger-grid"></div>
+            <div class="thermal-controls" style="margin-top:12px">
+              <label for="time-since">経過時間 (s)</label>
+              <input id="time-since" type="range" min="0" max="60" value="0" />
+              <span id="time-since-value">0s</span>
+            </div>
+            <canvas id="thermal-canvas" width="300" height="300" style="margin-top:12px;display:block"></canvas>
+            <div class="buttons" style="margin-top:12px">
+              <button id="analyze-thermal" class="primary">解析</button>
+              <button id="clear-thermal">クリア</button>
+            </div>
+            <div id="thermal-result" class="result-box"></div>
+          </div>
+
+          <!-- 音響解析 -->
+          <div class="card attack-card">
+            <div class="label-with-help">
+              <h3>🔊 音響解析</h3>
+              <div class="tooltip-wrapper">
+                <span class="help-icon">?</span>
+                <div class="tooltip">PIN入力時の打鍵音から、音のピーク数を検出してPINの桁数を推定します。<br>テンキー（数字関係なし）を押すか、音声ファイルを読み込ませてください。</div>
+              </div>
+            </div>
+            <div id="audio-keypad" class="finger-grid"></div>
+            <div style="margin-top:12px;padding:10px;background:rgba(99,102,241,0.08);border-radius:8px;font-size:13px">
+              打鍵回数: <strong id="audio-tap-count">0</strong>
+            </div>
+            <div class="form-row" style="margin-top:12px">
+              <div class="label-with-help">
+                <label>音声ファイル</label>
+                <div class="tooltip-wrapper">
+                  <span class="help-icon">?</span>
+                  <div class="tooltip">PIN入力時の打鍵音を録音した音声ファイル（MP3、WAV等）をアップロード。<br>波形から音のピーク（打鍵回数）を検出し、PINの桁数を推定します。</div>
+                </div>
+              </div>
+              <input id="audio-file" type="file" accept="audio/*" />
+            </div>
+            <div class="buttons">
+              <button id="analyze-audio" class="primary">解析</button>
+              <button id="clear-audio">クリア</button>
+            </div>
+            <div id="audio-result" class="result-box"></div>
+          </div>
+
+          <!-- 盗撮・ショルダーハッキング -->
+          <div class="card attack-card">
+            <div class="label-with-help">
+              <h3>📹 盗聴解析</h3>
+              <div class="tooltip-wrapper">
+                <span class="help-icon">?</span>
+                <div class="tooltip">カメラ盗撮やショルダーハッキングで覗き見ます。<br>視点や誤差によって検出精度が変わります。</div>
+              </div>
+            </div>
+            <div id="video-keypad" class="finger-grid"></div>
+            <div style="margin-top:12px;padding:10px;background:rgba(99,102,241,0.08);border-radius:8px;font-size:13px">
+              入力PIN: <strong id="video-pin-display">****</strong>
+            </div>
+            <div class="form-row" style="margin-top:12px">
+              <div class="label-with-help">
+                <label>視点</label>
+                <div class="tooltip-wrapper">
+                  <span class="help-icon">?</span>
+                  <div class="tooltip"><strong>真上:</strong> 監視カメラが真上に設置された理想条件。すべての数字を検出可能。<br><strong>斜め:</strong> 肩越しや斜めからの撮影。信頼度-30%、検出数が最大50%削減。</div>
+                </div>
+              </div>
+              <select id="video-angle">
+                <option value="top">真上（高精度）</option>
+                <option value="tilt">斜め（精度-30%、検出数減）</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <div class="label-with-help">
+                <label for="pixel-error">視角誤差(px)</label>
+                <div class="tooltip-wrapper">
+                  <span class="help-icon">?</span>
+                  <div class="tooltip">カメラ解像度・距離・手振れ等による座標検出の不正確さ。<br><strong>0-20px:</strong> 低誤差、信頼度ペナルティのみ<br><strong>20px超:</strong> 高誤差、検出数が半減し信頼度も大幅低下</div>
+                </div>
+              </div>
+              <input id="pixel-error" type="number" min="0" max="50" value="8" />
+            </div>
+            <div class="buttons">
+              <button id="analyze-video" class="primary">解析</button>
+              <button id="clear-video">クリア</button>
+            </div>
+            <div id="video-result" class="result-box"></div>
+          </div>
+        </div>
+
+        <!-- 右側：統合分析 -->
+        <div class="analysis-panel">
+          <div class="card">
+            <h3>📊 統合分析</h3>
+            <div class="buttons" style="margin-bottom:16px">
+              <button id="run-sim" class="primary">全手法を統合</button>
+              <button id="export-sim">エクスポート</button>
+              <button id="push-to-calc">PINパターン計算へ転送</button>
+            </div>
+
+            <!-- レーダーチャート -->
+            <div style="margin-bottom:20px">
+              <h4 style="font-size:14px;margin:0 0 12px;color:var(--muted)">攻撃手法の有効性</h4>
+              <canvas id="radar-chart" width="320" height="320"></canvas>
+            </div>
+
+            <!-- 専門家のヒント -->
+            <div style="margin-bottom:20px">
+              <h4 style="font-size:14px;margin:0 0 8px;color:var(--muted)">💡 専門家のヒント</h4>
+              <div id="expert-hints" class="result-box" style="min-height:80px;font-size:13px;line-height:1.7">
+                各攻撃手法を実行後、「全手法を統合」を押してください。
+              </div>
+            </div>
+
+            <!-- PINパターンランキング -->
+            <div>
+              <h4 style="font-size:14px;margin:0 0 8px;color:var(--muted)">🎯 推定PINランキング</h4>
+              <div id="pin-ranking" class="pin-ranking">
+                解析実行後に表示されます
+              </div>
+            </div>
+
+            <!-- 統合結果サマリー -->
+            <div style="margin-top:20px;padding:12px;background:rgba(99,102,241,0.08);border-radius:8px;border:1px solid var(--card-border)">
+              <div class="result-row"><strong>候補集合:</strong> <span id="sim-candidates">—</span></div>
+              <div class="result-row"><strong>推定桁数:</strong> <span id="sim-length">—</span></div>
+              <div class="result-row"><strong>順序確度:</strong> <span id="sim-order-confidence">—</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: セキュリティ -->
+    <section id="tab-sec" class="tab-panel hidden">
+      <div class="panel two-col">
+        <div class="card">
+          <h3>各攻撃への対策</h3>
+          <div class="card-mini">
+            <h4>🔍 指紋解析</h4>
+            <ul>
+              <li>わかる: 押されたキーの候補集合</li>
+              <li>わからない: 正確な順序（通常）</li>
+              <li>有効条件: 表面がヌルっとしていて時間が短い場合</li>
+            </ul>
+          </div>
+
+          <div class="card-mini">
+            <h4>🌡️ 熱解析</h4>
+            <ul>
+              <li>わかる: 押した直後は温度差で順序のヒント</li>
+              <li>限界: 時間経過・複数回押下で判定困難</li>
+            </ul>
+          </div>
+
+          <div class="card-mini">
+            <h4>🔊 音響解析</h4>
+            <ul>
+              <li>わかる: 打鍵回数（桁数）</li>
+              <li>わからない: 押した数字（部屋の反響等で困難）</li>
+            </ul>
+          </div>
+
+          <div class="card-mini">
+            <h4>📹 盗聴解析（ショルダーハッキングを含む）</h4>
+            <ul>
+              <li>わかる: 視点・距離に応じて入力されたキーの位置</li>
+              <li>限界: 角度・解像度・手での隠蔽により精度低下</li>
+              <li>対策: 入力時に手で覆う、画面を傾ける</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>ランダムテンキーのデモ</h3>
+          <canvas id="random-keypad" width="260" height="320"></canvas>
+          <div class="buttons" style="margin-top:12px">
+            <button id="shuffle-keypad">シャッフル</button>
+            <button id="reset-keypad">リセット</button>
+          </div>
+
+          <!-- 入力表示 -->
+          <div style="margin-top:16px;padding:12px;background:rgba(99,102,241,0.05);border-radius:8px;border:1px solid var(--card-border)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <strong style="font-size:13px;color:var(--muted)">入力内容:</strong>
+              <button id="clear-hand-input" style="padding:4px 10px;font-size:12px;border-radius:6px;border:1px solid var(--card-border);background:rgba(99,102,241,0.1);color:var(--accent);cursor:pointer">クリア</button>
+            </div>
+            <div id="hand-cover-input" style="font-family:'JetBrains Mono',monospace;font-size:16px;color:var(--accent);min-height:24px;letter-spacing:2px"></div>
+          </div>
+
+          <!-- 手で隠すモード -->
+          <div style="margin-top:12px;padding:10px 12px;background:rgba(99,102,241,0.05);border-radius:8px;border:1px solid var(--card-border)">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="hand-cover-mode" />
+              <span style="font-size:13px">✋ 手で隠すモード（入力後すぐマスク）</span>
+            </label>
+          </div>
+
+          <small style="display:block;margin-top:8px">ランダム配置は盗撮・指紋攻撃への難易度を上げます。</small>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h3>実運用チェックリスト</h3>
+        <ul class="checklist">
+          <li><input type="checkbox" disabled /> 入力時は手で押し隠す / 画面でテンキーを覆う</li>
+          <li><input type="checkbox" disabled /> ATMではランダム表示テンキー（採用されている場合あり）を使う</li>
+          <li><input type="checkbox" disabled /> 重要な端末は複合認証 (カード+PIN) を採用</li>
+          <li><input type="checkbox" disabled /> 端末の表面は定期的に清掃し、指紋痕跡を残さない</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <div class="footer">
+      🔗 GitHubリポジトリはこちら（ <a href="https://github.com/ipusiron/pin-threat-simulator" target="_blank" rel="noopener">ipusiron/pin-threat-simulator</a> ）
+    </div>
+  </footer>
+  <script src="script.js"></script>
+</body>
+</html>
