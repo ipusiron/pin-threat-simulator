@@ -343,7 +343,9 @@
 
         <div class="card">
           <h3>ランダムテンキーのデモ</h3>
-          <canvas id="random-keypad" width="260" height="320"></canvas>
+          <div style="max-width:260px;width:100%;margin:0 auto">
+            <canvas id="random-keypad" width="260" height="320" style="width:100%;height:auto;display:block"></canvas>
+          </div>
           <div class="buttons" style="margin-top:12px">
             <button id="shuffle-keypad">シャッフル</button>
             <button id="reset-keypad">リセット</button>

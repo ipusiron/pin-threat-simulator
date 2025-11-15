@@ -1295,9 +1295,30 @@ document.addEventListener('DOMContentLoaded', ()=>{
       return;
     }
 
-    randDims = setupHighDPICanvas(randCanvas);
+    // Get container dimensions for responsive sizing
+    const container = randCanvas.parentElement;
+    const containerWidth = container ? container.offsetWidth : randCanvas.offsetWidth;
+    const canvasWidth = Math.min(containerWidth, 260);
+    const canvasHeight = (canvasWidth / 260) * 320; // Maintain aspect ratio
+
+    // Set canvas dimensions
+    const dpr = window.devicePixelRatio || 1;
+    randCanvas.width = canvasWidth * dpr;
+    randCanvas.height = canvasHeight * dpr;
+    randCanvas.style.width = canvasWidth + 'px';
+    randCanvas.style.height = canvasHeight + 'px';
+
+    // Get context and scale for high DPI
     rctx = randCanvas.getContext('2d');
-    rctx.scale(randDims.dpr, randDims.dpr);
+    rctx.scale(dpr, dpr);
+
+    // Store dimensions
+    randDims = {
+      dpr: dpr,
+      displayWidth: canvasWidth,
+      displayHeight: canvasHeight
+    };
+
     randKeypadInitialized = true;  // Set flag BEFORE calling drawKeypad
     drawKeypad(currentMapping);
   }
