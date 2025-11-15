@@ -307,6 +307,7 @@ option{background:var(--bg);color:var(--accent)}
 .attack-methods{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 /* Color-coded left borders to visually distinguish attack types */
 .attack-card{min-height:480px;border-left:3px solid transparent;transition:border-color 0.3s;position:relative;z-index:1}
+.attack-card:hover{z-index:10002}
 .attack-card:nth-child(1){border-left-color:rgba(99,102,241,0.5)} /* Blue - Fingerprint */
 .attack-card:nth-child(2){border-left-color:rgba(239,68,68,0.5)} /* Red - Thermal */
 .attack-card:nth-child(3){border-left-color:rgba(16,185,129,0.5)} /* Green - Acoustic */
@@ -316,8 +317,9 @@ option{background:var(--bg);color:var(--accent)}
 .analysis-panel{position:sticky;top:20px}
 
 /* Tooltip positioning fix for attack cards */
-.attack-card .tooltip-wrapper{overflow:visible}
-.attack-card .tooltip{left:0;transform:translateX(0)}
+.attack-card .tooltip-wrapper{overflow:visible;z-index:10003}
+.attack-card .tooltip-wrapper:hover{z-index:10003}
+.attack-card .tooltip{left:0;transform:translateX(0);z-index:10003}
 .attack-card:nth-child(2) .tooltip,
 .attack-card:nth-child(4) .tooltip{left:auto;right:0}
 .attack-card .tooltip::after{left:24px;transform:translateX(0)}
