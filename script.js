@@ -1215,6 +1215,51 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
 
   /* -----------------------
+     Tooltip positioning system
+     ----------------------- */
+  // Dynamic tooltip positioning to prevent overflow
+  function adjustTooltipPosition(tooltipWrapper) {
+    const tooltip = tooltipWrapper.querySelector('.tooltip');
+    if (!tooltip) return;
+
+    // Get viewport and element positions
+    const viewportWidth = window.innerWidth;
+    const wrapperRect = tooltipWrapper.getBoundingClientRect();
+
+    // Calculate tooltip width (need to show it briefly to measure)
+    tooltip.style.visibility = 'hidden';
+    tooltip.style.opacity = '1';
+    const tooltipRect = tooltip.getBoundingClientRect();
+    tooltip.style.visibility = '';
+    tooltip.style.opacity = '';
+
+    // Calculate ideal center position
+    const idealLeft = wrapperRect.left + (wrapperRect.width / 2) - (tooltipRect.width / 2);
+
+    // Reset classes
+    tooltip.classList.remove('tooltip-left', 'tooltip-right');
+
+    // Check for left overflow
+    if (idealLeft < 24) {
+      tooltip.classList.add('tooltip-left');
+    }
+    // Check for right overflow
+    else if (idealLeft + tooltipRect.width > viewportWidth - 24) {
+      tooltip.classList.add('tooltip-right');
+    }
+    // Center position is fine - keep default
+  }
+
+  // Add event listeners to all tooltip wrappers
+  const tooltipWrappers = qa('.tooltip-wrapper');
+  tooltipWrappers.forEach(wrapper => {
+    wrapper.addEventListener('mouseenter', () => {
+      // Small delay to ensure tooltip is visible for measurement
+      setTimeout(() => adjustTooltipPosition(wrapper), 50);
+    });
+  });
+
+  /* -----------------------
      Random keypad drawing (security tab)
      ----------------------- */
   // Demonstrates randomized keypad layout defense strategy

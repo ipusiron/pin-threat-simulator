@@ -326,9 +326,11 @@ option{background:var(--bg);color:var(--accent)}
 .attack-card:nth-child(2) .tooltip::after,
 .attack-card:nth-child(4) .tooltip::after{left:auto;right:24px}
 
-/* Tooltip positioning fix for calculation tab */
-#tab-calc .tooltip{left:auto;right:0;transform:translateX(0)}
-#tab-calc .tooltip::after{left:auto;right:24px;transform:translateX(0)}
+/* Dynamic tooltip positioning classes - high priority */
+.tooltip.tooltip-left{left:0 !important;transform:translateX(0) !important}
+.tooltip.tooltip-left::after{left:24px !important;right:auto !important;transform:translateX(0) !important}
+.tooltip.tooltip-right{left:auto !important;right:0 !important;transform:translateX(0) !important}
+.tooltip.tooltip-right::after{left:auto !important;right:24px !important;transform:translateX(0) !important}
 
 /* PIN ranking list with scrollable container */
 .pin-ranking{display:flex;flex-direction:column;gap:8px;max-height:240px;overflow-y:auto;padding:4px}
