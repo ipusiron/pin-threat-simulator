@@ -106,12 +106,16 @@ body > *{
 /* Actions area (theme toggle + export buttons) positioned absolutely in top-right */
 .actions{position:absolute;top:0;right:0;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
 /* Circular theme toggle button */
-.theme-toggle{width:48px;height:48px;border-radius:50%;border:2px solid var(--card-border);background:var(--card);backdrop-filter:blur(10px);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:20px;transition:all 0.3s;box-shadow:0 4px 12px rgba(0,0,0,0.1)}
-.theme-toggle:hover{box-shadow:0 0 20px var(--brand-glow)}
+.theme-toggle{width:48px;height:48px;border-radius:50%;border:2px solid var(--card-border);background:var(--card);backdrop-filter:blur(10px);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:20px;transition:all 0.3s;box-shadow:0 4px 12px rgba(0,0,0,0.1);color:#fbbf24;text-shadow:0 0 8px rgba(251,191,36,0.6)}
+.theme-toggle:hover{box-shadow:0 0 20px var(--brand-glow);transform:scale(1.05)}
 
-/* Light mode theme toggle styling */
-[data-theme="light"] .theme-toggle{background:rgba(255,255,255,0.9);border-color:rgba(99,102,241,0.4);box-shadow:0 4px 12px rgba(99,102,241,0.2)}
-[data-theme="light"] .theme-toggle:hover{box-shadow:0 0 20px rgba(99,102,241,0.4);background:rgba(255,255,255,1);border-color:rgba(99,102,241,0.6)}
+/* Dark mode: moon icon with blue glow */
+[data-theme="dark"] .theme-toggle{color:#60a5fa;text-shadow:0 0 12px rgba(96,165,250,0.8)}
+[data-theme="dark"] .theme-toggle:hover{color:#93c5fd;text-shadow:0 0 16px rgba(147,197,253,0.9)}
+
+/* Light mode: sun icon with warm glow */
+[data-theme="light"] .theme-toggle{color:#f59e0b;text-shadow:0 0 12px rgba(245,158,11,0.8)}
+[data-theme="light"] .theme-toggle:hover{color:#fbbf24;text-shadow:0 0 16px rgba(251,191,36,0.9)}
 
 /* Export buttons in actions area */
 .actions button{padding:8px 12px;border-radius:8px;border:1px solid rgba(99,102,241,0.3);background:rgba(99,102,241,0.1);backdrop-filter:blur(10px);color:var(--accent);cursor:pointer;transition:all 0.3s;font-size:13px;white-space:nowrap;font-weight:500}
