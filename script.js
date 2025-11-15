@@ -137,11 +137,31 @@ document.addEventListener('DOMContentLoaded', ()=>{
    */
   function initRadarChart(){
     if(!radarCanvas) return;
-    // Reset context to allow re-initialization when size changes
-    radarCtx = null;
-    radarDims = setupHighDPICanvas(radarCanvas);
+
+    // Get container dimensions
+    const container = el('radar-chart-container');
+    if(!container) return;
+
+    const containerWidth = container.offsetWidth;
+    const canvasSize = Math.min(containerWidth, 320);
+
+    // Set canvas dimensions
+    const dpr = window.devicePixelRatio || 1;
+    radarCanvas.width = canvasSize * dpr;
+    radarCanvas.height = canvasSize * dpr;
+    radarCanvas.style.width = canvasSize + 'px';
+    radarCanvas.style.height = canvasSize + 'px';
+
+    // Get context and scale for high DPI
     radarCtx = radarCanvas.getContext('2d');
-    radarCtx.scale(radarDims.dpr, radarDims.dpr);
+    radarCtx.scale(dpr, dpr);
+
+    // Store dimensions
+    radarDims = {
+      dpr: dpr,
+      displayWidth: canvasSize,
+      displayHeight: canvasSize
+    };
   }
 
   /**
