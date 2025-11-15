@@ -327,9 +327,9 @@ option{background:var(--bg);color:var(--accent)}
 .attack-card:nth-child(4) .tooltip::after{left:auto;right:24px}
 
 /* Dynamic tooltip positioning classes - high priority */
-.tooltip.tooltip-left{left:0 !important;transform:translateX(0) !important}
+.tooltip.tooltip-left{left:0 !important;transform:translateX(0) !important;transition:opacity 0.3s cubic-bezier(0.68,-0.55,0.265,1.55), bottom 0.3s cubic-bezier(0.68,-0.55,0.265,1.55) !important}
 .tooltip.tooltip-left::after{left:24px !important;right:auto !important;transform:translateX(0) !important}
-.tooltip.tooltip-right{left:auto !important;right:0 !important;transform:translateX(0) !important}
+.tooltip.tooltip-right{left:auto !important;right:0 !important;transform:translateX(0) !important;transition:opacity 0.3s cubic-bezier(0.68,-0.55,0.265,1.55), bottom 0.3s cubic-bezier(0.68,-0.55,0.265,1.55) !important}
 .tooltip.tooltip-right::after{left:auto !important;right:24px !important;transform:translateX(0) !important}
 
 /* PIN ranking list with scrollable container */

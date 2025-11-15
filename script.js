@@ -1217,8 +1217,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   /* -----------------------
      Tooltip positioning system
      ----------------------- */
-  // Dynamic tooltip positioning to prevent overflow
-  function adjustTooltipPosition(tooltipWrapper) {
+  // Pre-calculate and set tooltip positions to prevent visible movement
+  function preCalculateTooltipPosition(tooltipWrapper) {
     const tooltip = tooltipWrapper.querySelector('.tooltip');
     if (!tooltip) return;
 
@@ -1226,17 +1226,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
     const viewportWidth = window.innerWidth;
     const wrapperRect = tooltipWrapper.getBoundingClientRect();
 
-    // Calculate tooltip width (need to show it briefly to measure)
-    tooltip.style.visibility = 'hidden';
-    tooltip.style.opacity = '1';
-    const tooltipRect = tooltip.getBoundingClientRect();
-    tooltip.style.visibility = '';
-    tooltip.style.opacity = '';
+    // Estimate tooltip width without showing it (using max-width)
+    const estimatedWidth = Math.min(400, viewportWidth - 48);
 
     // Calculate ideal center position
-    const idealLeft = wrapperRect.left + (wrapperRect.width / 2) - (tooltipRect.width / 2);
+    const idealLeft = wrapperRect.left + (wrapperRect.width / 2) - (estimatedWidth / 2);
 
-    // Reset classes
+    // Reset classes first
     tooltip.classList.remove('tooltip-left', 'tooltip-right');
 
     // Check for left overflow
@@ -1244,7 +1240,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
       tooltip.classList.add('tooltip-left');
     }
     // Check for right overflow
-    else if (idealLeft + tooltipRect.width > viewportWidth - 24) {
+    else if (idealLeft + estimatedWidth > viewportWidth - 24) {
       tooltip.classList.add('tooltip-right');
     }
     // Center position is fine - keep default
@@ -1253,9 +1249,14 @@ document.addEventListener('DOMContentLoaded', ()=>{
   // Add event listeners to all tooltip wrappers
   const tooltipWrappers = qa('.tooltip-wrapper');
   tooltipWrappers.forEach(wrapper => {
+    // Pre-calculate position on mouseenter (before tooltip becomes visible)
     wrapper.addEventListener('mouseenter', () => {
-      // Small delay to ensure tooltip is visible for measurement
-      setTimeout(() => adjustTooltipPosition(wrapper), 50);
+      preCalculateTooltipPosition(wrapper);
+    });
+
+    // Recalculate on window resize
+    window.addEventListener('resize', () => {
+      preCalculateTooltipPosition(wrapper);
     });
   });
 
