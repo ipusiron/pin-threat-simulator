@@ -26,7 +26,7 @@ demo: https://ipusiron.github.io/pin-threat-simulator/
 - 指紋解析
 - 熱解析
 - 音響解析
-- 盗聴解析（ショルダーハッキングを含む）
+- 盗撮解析（ショルダーハッキングを含む）
 
 ---
 
