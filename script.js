@@ -136,7 +136,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
    * Initialize radar chart canvas with high DPI support
    */
   function initRadarChart(){
-    if(radarCtx) return; // Already initialized
+    if(!radarCanvas) return;
+    // Reset context to allow re-initialization when size changes
+    radarCtx = null;
     radarDims = setupHighDPICanvas(radarCanvas);
     radarCtx = radarCanvas.getContext('2d');
     radarCtx.scale(radarDims.dpr, radarDims.dpr);
@@ -147,7 +149,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
    * @param {Object} scores - Attack scores: {finger, thermal, audio, video} each 0-100
    */
   function drawRadarChart(scores){
-    if(!radarCtx) initRadarChart();
+    // Always re-initialize to ensure proper sizing
+    initRadarChart();
+    if(!radarCtx || !radarDims) return;
 
     const w = radarDims.displayWidth;
     const h = radarDims.displayHeight;
