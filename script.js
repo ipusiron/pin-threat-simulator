@@ -1213,33 +1213,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
     el('tab-calc').classList.remove('hidden');
   });
 
-  /* -----------------------
-     Audio analysis (simple peak detection)
-     ----------------------- */
-  el('analyze-audio').addEventListener('click', async ()=>{
-    const f = el('audio-file').files[0];
-    if(!f){ showToast('音声ファイルを選択してください', 'warning'); return; }
-    const arr = await f.arrayBuffer();
-    try {
-      const ac = new (window.AudioContext || window.webkitAudioContext)();
-      const buf = await ac.decodeAudioData(arr.slice(0));
-      const channelData = buf.getChannelData(0);
-      // simple peak count: count number of times amplitude crosses threshold from below
-      let peaks = 0;
-      const threshold = 0.15;
-      let above = false;
-      for(let i=0;i<channelData.length;i+=200){ // sample step to reduce compute
-        const s = Math.abs(channelData[i]);
-        if(!above && s > threshold){ peaks++; above = true; }
-        if(above && s < threshold) above = false;
-      }
-      window.audioPeakCount = peaks;
-      el('audio-result').textContent = `${peaks} peaks detected (推定桁数: ${peaks||'—'})`;
-    } catch(e){
-      console.error(e);
-      showToast('音声解析でエラーが発生しました（ブラウザー対応の可能性あり）', 'error');
-    }
-  });
 
   /* -----------------------
      Random keypad drawing (security tab)
