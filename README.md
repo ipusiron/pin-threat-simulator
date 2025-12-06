@@ -9,7 +9,7 @@ demo: https://ipusiron.github.io/pin-threat-simulator/
 ---
 -->
 
-# PIN Threat Simulator
+# PIN Threat Simulator - PIN認証攻撃シミュレーター
 
 ![GitHub Repo stars](https://img.shields.io/github/stars/ipusiron/pin-threat-simulator?style=social)
 ![GitHub forks](https://img.shields.io/github/forks/ipusiron/pin-threat-simulator?style=social)
