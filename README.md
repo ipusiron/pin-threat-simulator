@@ -1,11 +1,41 @@
 <!--
 ---
-title: PIN Threat Simulator
-category: authentication-security
-difficulty: 3
-description: A web-based simulator to demonstrate PIN code attack techniques (fingerprint residue, thermal analysis, shoulder surfing, acoustic inference) and defense strategies.
-tags: [pin, simulator, authentication, security, education, javascript]
-demo: https://ipusiron.github.io/pin-threat-simulator/
+id: day088
+slug: pin-threat-simulator
+
+title: "PIN Threat Simulator"
+
+subtitle_ja: "PIN認証攻撃シミュレーター"
+subtitle_en: "PIN Authentication Attack Simulator"
+
+description_ja: "暗証番号（PIN）認証に対する攻撃手法（指紋解析、熱解析、音響解析、盗撮解析）をシミュレーションし、防御策の有効性を理解するための教育用ツール"
+description_en: "An educational tool that simulates attack techniques against PIN authentication (fingerprint residue, thermal analysis, acoustic inference, shoulder surfing) and demonstrates why defense strategies are effective"
+
+category_ja:
+  - 認証
+  - PIN解析
+category_en:
+  - Authentication
+  - PIN Cracking
+
+difficulty: 5
+
+tags:
+  - pin
+  - authentication
+  - simulator
+  - fingerprint
+  - thermal-analysis
+  - acoustic-analysis
+  - shoulder-surfing
+  - security-education
+  - javascript
+  - canvas
+
+repo_url: "https://github.com/ipusiron/pin-threat-simulator"
+demo_url: "https://ipusiron.github.io/pin-threat-simulator/"
+
+hub: true
 ---
 -->
 
