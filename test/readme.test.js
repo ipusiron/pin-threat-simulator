@@ -125,3 +125,45 @@ test('TECHNICAL.md documents the same acoustic thresholds as pin-engine.js', () 
   assert.ok(readme.includes('0.3') && readme.includes('0.1'),
     'README should mention the dual threshold values 0.3 / 0.1');
 });
+
+// --- 8. Bold emphasis budget: at most 2 per H2 section (outside code) ----
+test('Each H2 section in README has at most 2 bold spans', () => {
+  const lines = readme.split(/\r?\n/);
+  let inCode = false;
+  let section = '(前書き)';
+  const counts = new Map();
+  counts.set(section, 0);
+  for(const line of lines){
+    if(/^```/.test(line)){ inCode = !inCode; continue; }
+    if(inCode) continue;
+    if(/^##\s/.test(line)){
+      section = line.trim();
+      counts.set(section, 0);
+      continue;
+    }
+    // Strip inline code so **…** inside `code` is not counted.
+    const stripped = line.replace(/`[^`]*`/g, '');
+    const bolds = stripped.match(/\*\*[^*\n]+\*\*/g) || [];
+    counts.set(section, (counts.get(section) || 0) + bolds.length);
+  }
+  for(const [sec, n] of counts){
+    assert.ok(n <= 2, `Section "${sec}" has ${n} bold spans (max 2 allowed)`);
+  }
+});
+
+// --- 9. List items must not start with "- **name**" ----------------------
+test('No list item in README starts with a bolded label like "- **name**"', () => {
+  const lines = readme.split(/\r?\n/);
+  let inCode = false;
+  const offenders = [];
+  lines.forEach((line, i) => {
+    if(/^```/.test(line)){ inCode = !inCode; return; }
+    if(inCode) return;
+    // Match "- **…**" or "  - **…**" etc. Also catches "* **…**".
+    if(/^\s*[-*]\s+\*\*[^*]+\*\*/.test(line)){
+      offenders.push(`${i + 1}: ${line.trim()}`);
+    }
+  });
+  assert.equal(offenders.length, 0,
+    `list items with bold labels found:\n${offenders.join('\n')}`);
+});
