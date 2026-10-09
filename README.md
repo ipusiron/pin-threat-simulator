@@ -700,16 +700,21 @@ pin-threat-simulator/
 │   │   ├── screenshot.png     # 計算タブの英語版スクリーンショット
 │   │   ├── screenshot2.png    # 攻撃シミュレーションタブの英語版スクリーンショット
 │   │   └── screenshot3.png    # セキュリティ解説タブの英語版スクリーンショット
+│   ├── samples/
+│   │   └── pin-taps-4.wav     # 音響解析の動作確認用サンプル音声（打鍵4回、約1.6秒）
 │   ├── screenshot.png     # 計算タブのスクリーンショット
 │   ├── screenshot2.png    # 攻撃シミュレーションタブのスクリーンショット
 │   └── screenshot3.png    # セキュリティ解説タブのスクリーンショット
 ├── test/
+│   ├── audio.test.js      # サンプルWAVの検証（4ピーク・30KB以下・バイト一致）
 │   ├── contrast.test.js   # ライト/ダークの文字コントラスト（WCAG AA）検証
 │   ├── engine.test.js     # 計算エンジンの期待値＋総当たり参照実装による照合
 │   ├── format.test.js     # 行長・主要ファイルの行数下限の検証
 │   ├── html.test.js       # CSP/favicon/noscript/i18n/主要idなどのHTML検証
 │   ├── i18n.test.js       # 辞書の日英キー一致・英語に日本語0・script.js日本語0
 │   └── readme.test.js     # README/README.en.mdの計算例・画像参照・見出しの検証
+├── tools/
+│   └── gen-sample-wav.mjs # 同梱WAV（打鍵4回）を決定的に生成するNodeスクリプト
 ├── .gitignore             # Git除外設定
 ├── .nojekyll              # GitHub Pages向けJekyllビルドの無効化
 ├── CLAUDE.md              # Claude Code向けの開発ガイダンス

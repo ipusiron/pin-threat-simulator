@@ -657,16 +657,21 @@ pin-threat-simulator/
 │   │   ├── screenshot.png     # English screenshot of the calc tab
 │   │   ├── screenshot2.png    # English screenshot of the attack simulation tab
 │   │   └── screenshot3.png    # English screenshot of the security tab
+│   ├── samples/
+│   │   └── pin-taps-4.wav     # Bundled sample audio for the acoustic analyzer (4 taps, ~1.6s)
 │   ├── screenshot.png     # Japanese screenshot of the calc tab
 │   ├── screenshot2.png    # Japanese screenshot of the attack simulation tab
 │   └── screenshot3.png    # Japanese screenshot of the security tab
 ├── test/
+│   ├── audio.test.js      # Sample WAV verification (4 peaks, size <= 30KB, byte-equal regeneration)
 │   ├── contrast.test.js   # WCAG AA contrast across light / dark themes
 │   ├── engine.test.js     # Expected values and brute-force oracle sweep for the engine
 │   ├── format.test.js     # Line length and minimum file size
 │   ├── html.test.js       # CSP / favicon / noscript / i18n / id presence
 │   ├── i18n.test.js       # Dictionary parity, no Japanese in en, no empty ja, no literals in script.js
 │   └── readme.test.js     # README / README.en.md examples, images, headings, forbidden words
+├── tools/
+│   └── gen-sample-wav.mjs # Node script that deterministically regenerates the bundled WAV
 ├── .gitignore             # Git ignore list
 ├── .nojekyll              # Disable Jekyll on GitHub Pages
 ├── CLAUDE.md              # Development guide for Claude Code

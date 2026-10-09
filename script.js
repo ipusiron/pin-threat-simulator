@@ -495,6 +495,34 @@ function bootstrap(){
     el('audio-tap-count').textContent = '0';
   });
 
+  // Try the bundled sample WAV (same-origin fetch, within media-src 'self').
+  // Routes through the exact decodeAudioData -> countPeaks path used for
+  // file upload, so a user can verify the analyzer without a recording.
+  el('try-audio-sample').addEventListener('click', ()=>{
+    const url = './assets/samples/pin-taps-4.wav';
+    fetch(url).then(res => {
+      if(!res.ok) throw new Error('fetch failed: ' + res.status);
+      return res.arrayBuffer();
+    }).then(arr => {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const finish = ()=>{ try { ctx.close(); } catch (_) { /* ignore */ } };
+      ctx.decodeAudioData(arr, (buf)=>{
+        const data = buf.getChannelData(0);
+        const peaks = countPeaks(data, PEAK_DEFAULTS);
+        window._attackResults.audio = peaks;
+        window.audioPeakCount = peaks;
+        el('audio-result').innerHTML = t('audio.resultSample', {peaks});
+        showToast(t('audio.doneToast'), 'success');
+        finish();
+      }, ()=>{
+        showToast(t('audio.sampleFailed'), 'error');
+        finish();
+      });
+    }).catch(()=>{
+      showToast(t('audio.sampleFailed'), 'error');
+    });
+  });
+
   /* -----------------------
      Video keypad (shoulder surfing)
      ----------------------- */
