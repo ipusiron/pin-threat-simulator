@@ -4,7 +4,7 @@
 
 本ツール「PIN Threat Simulator」は、**教育目的でのみ**使用することを前提に設計されています。
 
-### ✅ 許可される使用
+### 許可される使用
 
 - 大学・専門学校でのセキュリティ教育
 - 企業内セキュリティ研修
@@ -12,7 +12,7 @@
 - 個人学習・研究目的での使用
 - セキュリティ意識向上のための啓発活動
 
-### ❌ 禁止される使用
+### 禁止される使用
 
 - 実際のシステムへの不正アクセス
 - 他人のPIN情報の不正取得
@@ -24,57 +24,74 @@
 
 ### クライアントサイド処理
 
-- すべての計算はブラウザー内で完結（サーバーへのデータ送信なし）
+- すべての処理はブラウザー内で完結します（サーバーへのデータ送信はありません）
 - 入力データは外部に送信されません
-- ユーザーの操作履歴は収集されません
+- 操作履歴は収集されません
 
 ### ローカルストレージ
 
-- テーマ設定（ダーク/ライト）のみをlocalStorageに保存
-- 個人情報は一切保存されません
-- ブラウザーのプライベートモードでも正常に動作します
+- テーマ設定（ダーク／ライト）のみを localStorage に保存します
+- 個人情報は一切保存しません
+- プライベートモードでも通常どおり動作します
 
 ### エクスポート機能
 
-- JSONエクスポート: セッションデータのみ（個人情報不含）
-- CSVエクスポート: 計算結果のみ
-- エクスポートされたファイルはユーザーの責任で管理してください
+- JSON エクスポート: セッションデータのみ（個人情報は含みません）
+- CSV エクスポート: 計算結果のみ
+- エクスポートしたファイルはユーザーの責任で管理してください
 
 ## セキュリティ実装
 
-### XSS対策
+### XSS 対策
 
-- ユーザー入力は数値・選択肢のみに制限
-- DOM操作は`textContent`を使用（`innerHTML`の不使用）
-- 外部リソースの読み込みなし
+- ユーザー入力は数値・選択肢・ワイルドカード文字列（`*` と 0〜9）に限定しています
+- 動的な HTML 挿入は内部辞書 `pts-messages.js` の既知テンプレートのみで、
+  任意のユーザー文字列を `innerHTML` に流しません
 
-### CSRF対策
+### CSRF 対策
 
-- サーバーサイド処理なし（完全クライアントサイド）
-- 外部APIへの通信なし
+- サーバーサイド処理はありません（完全クライアントサイド）
+- 外部 API との通信はありません
 
 ### Content Security Policy
 
-GitHub Pagesでの公開時、以下のポリシーを推奨：
+本リポジトリーの `index.html` は、以下の CSP を `<meta http-equiv>` で設定しています。
 
 ```
-Content-Security-Policy:
-  default-src 'self';
-  script-src 'self';
-  style-src 'self' 'unsafe-inline';
-  img-src 'self' data:;
-  font-src 'self';
-  connect-src 'none';
-  frame-ancestors 'self';
+default-src 'self';
+script-src 'self';
+style-src 'self';
+img-src 'self' data: blob:;
+media-src 'self' blob:;
+connect-src 'self';
+base-uri 'self';
+form-action 'self';
 ```
+
+補足:
+
+- `<meta>` で設定できるのは一部のディレクティブだけです。`frame-ancestors` と
+  `X-Content-Type-Options` は `<meta>` では効かず、HTTP レスポンスヘッダーでの設定が必要です
+- 本ツールは外部 CDN や外部 API を使用しません
+- `script-src 'self'` のため、インラインスクリプトは禁止です
+- `style-src 'self'`（`unsafe-inline` なし）のため、インライン style 属性は禁止です
+  （JavaScript から `element.style.*` を書き換える CSSOM の操作は許可されます）
+
+### 配信時の推奨 HTTP ヘッダー
+
+GitHub Pages など、HTTP ヘッダーを設定できる環境では以下もあわせて設定することを推奨します。
+
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: no-referrer`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
 
 ## 脆弱性報告
 
-セキュリティ上の問題を発見した場合：
+セキュリティ上の問題を発見した場合は、以下の手順で報告してください。
 
-1. **公開Issue での報告は避けてください**
-2. GitHubのSecurity Advisoriesを使用
-3. または開発者に直接連絡（リポジトリのREADME参照）
+1. 公開 Issue での報告は避けてください
+2. GitHub の Security Advisories を使用してください
+3. または開発者に直接連絡してください（リポジトリーの README を参照）
 
 ### 報告時の情報
 
@@ -92,8 +109,4 @@ Content-Security-Policy:
 
 ## ライセンス
 
-MIT License - 詳細はLICENSEファイルを参照
-
----
-
-**最終更新**: 2025年1月
+MIT License - 詳細は [LICENSE](LICENSE) を参照してください。

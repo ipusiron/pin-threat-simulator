@@ -8,13 +8,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Purpose**: Educational only - to help students and security professionals understand authentication vulnerabilities in a safe environment.
 
-**Tech Stack**: Pure client-side JavaScript, HTML5 Canvas, CSS. No build process, no dependencies, no server required.
+**Tech Stack**: Pure client-side JavaScript (ES modules), HTML5 Canvas, CSS. No build process, no npm dependencies, no server required for the app itself.
 
 ## How to Run
 
-Open `index.html` directly in a browser. No server or build step required.
+The script tag uses `type="module"`, which browsers refuse to load over `file://`. Serve the repository root over HTTP:
 
-For GitHub Pages deployment, files are served directly from the repository root.
+```bash
+python -m http.server 8099
+# then open http://localhost:8099/
+```
+
+For GitHub Pages, files are served directly from the repository root (main branch).
+
+## How to Test
+
+Tests use the Node 22 built-in test runner and have no runtime dependencies.
+
+```bash
+npm test
+```
+
+CI runs the same command on push and pull_request through `.github/workflows/test.yml`.
 
 ## Architecture
 
@@ -22,32 +37,46 @@ For GitHub Pages deployment, files are served directly from the repository root.
 
 1. **PINパターン計算 (PIN Pattern Calculation)** - Combinatorics engine for candidate calculation
 2. **攻撃シミュレーション (Attack Simulation)** - Multi-method attack demonstration with integrated analysis
-3. **セキュリティ (Security)** - Defense strategies and educational content
+3. **セキュリティ解説 (Security)** - Defense strategies and educational content
 
 ### File Structure
 
-- `index.html` - Main HTML with 3-tab UI structure
-- `script.js` - All application logic (~1400 lines)
+- `index.html` - Main HTML with 3-tab UI structure, CSP meta, favicon, noscript
+- `script.js` - DOM wiring (event handlers, canvas drawing, state management)
+- `pin-engine.js` - Pure logic module: `computeCandidates`, `parseWildcards`, `binom`,
+  `countPeaks`, `videoAccuracy`, `thermalDecay`, `generateCombinations`
+- `pts-messages.js` - Centralized message dictionary (Japanese for now, bilingual in later stage)
 - `style.css` - Styling and theming (dark/light mode)
+- `test/` - Node `--test` suites
+- `.github/workflows/test.yml` - CI pipeline
 
-### Core Components (script.js)
+### Candidate Calculation Engine
 
-**Candidate Calculation Engine** (`computeCandidates` function):
-- Three modes: `allowed` (restriction-based), `must` (inclusion-based), `partial` (wildcard-based)
-- Uses inclusion-exclusion principle for `must` mode with binomial coefficients
-- Supports wildcards (`*`) for partial digit specification
+See `TECHNICAL.md` for the full spec. Three modes:
 
-**Attack Simulators**:
-- **Fingerprint Analysis**: Interactive 3×4 keypad with density values (0-100)
-- **Thermal Analysis**: Canvas-based heatmap with exponential decay simulation (τ=20s)
-- **Acoustic Analysis**: Peak detection in audio waveforms to estimate digit count
-- **Shoulder Surfing**: Coordinate error degradation based on viewing angle
+- `allowed` - each position comes from candidate set S; fixed-position tokens must also be in S
+- `must` - every digit of S must appear; `allowDup=false` requires `n == |S|`
+- `partial` - each position comes from 0..9; S is unused except to render UI chips
 
-**Integration Flow**:
-1. User configures attack parameters in simulation tab
+Wildcards are a length-n array (`'*'` or a single digit per position). An invalid token
+(multi-digit, non-digit, length mismatch) returns `null` from `parseWildcards`.
+
+### Attack Simulators
+
+- **Fingerprint Analysis**: 3×4 keypad with density values (0-100)
+- **Thermal Analysis**: Canvas heatmap with 1°C/sec linear decay (engine export `thermalDecay`
+  uses the exponential form `T₀ * e^(-t/τ)`, τ=20)
+- **Acoustic Analysis**: Dual-threshold peak detection on audio buffers (rise=0.3, fall=0.1,
+  stride=200). File input is capped at 20MB; `AudioContext` is closed after decode
+- **Shoulder Surfing**: `videoAccuracy(err) = max(0.5, 1 - err/50)` as the tilt accuracy;
+  errorPenalty = `min(50, pixelErr × 1.5)`
+
+### Integration Flow
+
+1. User configures attack parameters in the simulation tab
 2. `simRun()` aggregates results from all enabled attack methods
 3. Results stored in `window._attackResults`
-4. "Push to Calc" button transfers candidates to calculation tab
+4. "PINパターン計算へ転送" button pushes the candidate set into the calculation tab
 
 ### Key Data Structures
 
@@ -84,30 +113,25 @@ This tool is **strictly for educational use** in controlled environments (classr
 ### Adding a new attack method
 
 1. Add checkbox in `<div class="card"><h3>手法選択</h3>` section (index.html)
-2. Create UI controls in new `.card` element
+2. Create UI controls in a new `.card` element
 3. Add result structure to `window._attackResults`
 4. Implement detection logic and call from `simRun()`
 5. Update `generatePINRanking()` scoring if needed
 
 ### Changing calculation limits
 
-- `cap` variables in `computeCandidates` control when full enumeration occurs
-- Generation limits: allowed=5000, must=3000, partial=500
-- Display limit: 1000 (CSVエクスポート for more)
+- `ENUM_CAPS` in `pin-engine.js` controls when full enumeration occurs
+- Defaults: allowed=5000, must=5000, partial=500
+- Display limit: 1000 in `script.js` (CSV export for more)
 
-### Modifying thermal decay
+### Adding or editing a message
 
-- Decay constant `dec=20` in thermal analysis
-- Formula: `T(t) = T₀ × e^(-t/τ)`
-
-### Key algorithms
-
-- **Binomial calculation**: Iterative formula avoiding factorial overflow
-- **Inclusion-exclusion**: `Σ(i=0 to k) (-1)^i × C(k,i) × (A-i)^n`
-- **Peak detection**: Threshold-based crossing with 200-sample stride
+- Edit `pts-messages.js` to add a key under the `ja` dictionary
+- Call `t('your.key', {params})` from `script.js`
+- Keep `script.js` free of Japanese string literals (enforced by `test/i18n.test.js`)
 
 ## Related Documents
 
 - 技術詳細: [TECHNICAL.md](TECHNICAL.md) - Implementation details, algorithms, performance optimizations
-- セキュリティポリシー: [SECURITY.md](SECURITY.md) - Usage guidelines, data privacy
+- セキュリティポリシー: [SECURITY.md](SECURITY.md) - Usage guidelines, data privacy, CSP
 - プロジェクト概要: [README.md](README.md) - Full documentation with usage scenarios
