@@ -5,9 +5,15 @@
 // License: MIT
 // Security: All processing is client-side, no data transmission to servers
 
-'use strict';
+import {
+  computeCandidates, parseWildcards,
+  countPeaks, videoAccuracy, PEAK_DEFAULTS,
+} from './pin-engine.js';
+import {t, translateStep} from './pts-messages.js';
 
-document.addEventListener('DOMContentLoaded', ()=>{
+const AUDIO_MAX_BYTES = 20 * 1024 * 1024; // 20MB cap for acoustic analysis
+
+function bootstrap(){
 
   /* -----------------------
      Helpers / Utilities
@@ -190,7 +196,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     }
 
     // Draw axes
-    const labels = ['指紋', '熱', '音響', '盗撮'];
+    const labels = [t('radar.finger'), t('radar.thermal'), t('radar.audio'), t('radar.video')];
     const values = [scores.finger, scores.thermal, scores.audio, scores.video];
     const angles = [0, Math.PI/2, Math.PI, Math.PI*3/2];
 
@@ -506,189 +512,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
     return qa('#digit-pick .digit.on').map(d=>d.dataset.d).map(s=>parseInt(s,10));
   }
 
-  /**
-   * Parse wildcard string into position-specific constraints
-   * Format: comma-separated values where '*' represents any digit
-   * Example: "1,*,3,*" for 4-digit PIN with positions 1 and 3 fixed
-   * @param {string} input - Wildcard specification string
-   * @param {number} pinLen - Expected PIN length
-   * @returns {string[]|null} Array of per-position constraints, or null if invalid
-   */
-  function parseWildcards(input, pinLen){
-    // User may provide comma separated tokens with '*' representing wildcard in that slot
-    // If blank or not matching length, return null (no wildcards)
-    if(!input || !input.trim()) return null;
-    const tokens = input.split(',').map(t=>t.trim());
-    if(tokens.length !== pinLen) return null;
-    return tokens; // array of strings per position
-  }
-
-  /**
-   * Compute PIN candidates using combinatorics and inclusion-exclusion principle
-   * Core algorithm that powers the pattern calculation tab
-   *
-   * Modes:
-   * - 'allowed': Only use specified digits (with/without duplicates)
-   * - 'must': Must include ALL specified digits at least once (inclusion-exclusion)
-   * - 'partial': Allow any digit 0-9 (wildcards specify constraints)
-   *
-   * @param {Object} params - Calculation parameters
-   * @param {number[]} params.digits - Candidate digit set
-   * @param {number} params.pinLen - PIN length
-   * @param {string} params.mode - Calculation mode
-   * @param {boolean} params.allowDup - Allow duplicate digits
-   * @param {string[]|null} params.wilds - Per-position wildcard constraints
-   * @returns {Object} {count: total combinations, candidates: array (truncated if large), steps: explanation text}
-   */
-  function computeCandidates({digits, pinLen, mode, allowDup, wilds}){
-    // Returns {count, candidates (maybe truncated), steps}
-    const steps = [];
-    const digitSet = Array.from(new Set(digits.map(d=>String(d))));
-    steps.push(`入力候補集合: { ${digitSet.join(', ')} }`);
-    // build allowed set for 'allowed' and 'must' modes: candidate digits only come from digitSet
-    // for 'partial' mode, allowed digits are 0-9
-    const allDigits = Array.from({length:10},(_,i)=>String(i));
-    let allowed = (mode === 'partial') ? allDigits : digitSet;
-    steps.push(`モード: ${mode}. 使用可能桁集合 = { ${allowed.join(', ')} }`);
-
-    // wildcards is array of tokens per position or null
-    if(wilds && wilds.length===pinLen){
-      steps.push(`ワイルドカード指定あり: ${wilds.join(',')}`);
-    }
-
-    // helper to compute Cartesian product count with per-position sets
-    const perPosSets = [];
-    for(let i=0;i<pinLen;i++){
-      if(wilds && wilds[i] && wilds[i].includes('*')){
-        // by default '*' means any allowed digit (0-9) when in partial mode, otherwise allowed set
-        perPosSets.push( (mode==='partial') ? allDigits : allowed );
-      } else {
-        // normal: each pos can be any of allowed
-        perPosSets.push( allowed );
-      }
-    }
-
-    // simple case: allowed-mode with duplicates allowed and no must constraints
-    if(mode === 'allowed' && allowDup){
-      // count = (|allowed|)^pinLen but must consider wildcards already expand to same allowed sets
-      let count = 1;
-      perPosSets.forEach(s=> count *= s.length);
-      steps.push(`単純計算: 各桁の選択肢数 = [${perPosSets.map(s=>s.length).join(', ')}] よって総数 = ${count}`);
-      // generate candidates up to cap
-      const cap = 5000;
-      let candidates = [];
-      if(count <= cap){
-        // generate all via recursion
-        function rec(i, cur){
-          if(i===pinLen){ candidates.push(cur.join('')); return; }
-          for(const d of perPosSets[i]) rec(i+1, cur.concat(d));
-        }
-        rec(0,[]);
-      }
-      return {count, candidates, steps};
-    }
-
-    // must-mode: candidate must include all digits from digitSet at least once (and other digits disallowed unless partial)
-    if(mode === 'must'){
-      // if duplicates allowed and allowed set length equals size of digitSet and pinLen==digitSet size and no wildcards -> permutations
-      if(!allowDup && digitSet.length === pinLen && (!wilds || wilds.every(w=>!w))){
-        // permutations of digitSet
-        const permute = (arr)=>{
-          if(arr.length<=1) return [arr];
-          const out = [];
-          for(let i=0;i<arr.length;i++){
-            const rest = arr.slice(0,i).concat(arr.slice(i+1));
-            for(const p of permute(rest)) out.push([arr[i]].concat(p));
-          }
-          return out;
-        };
-        const perms = permute(digitSet);
-        const candidates = perms.map(p=>p.join(''));
-        steps.push(`重複不可かつ各桁が一意で全数字を含むため順列を採用 (${perms.length})`);
-        return {count: candidates.length, candidates, steps};
-      }
-      // general case use inclusion-exclusion over allowed alphabet (allowed is digitSet or others if partial)
-      // We'll do inclusion-exclusion for the requirement "include every element of digitSet at least once"
-      // Universe size = allowed^pinLen
-      const alphabet = (mode==='partial') ? allDigits : digitSet;
-      const A = alphabet.length;
-      // if A < digitSet.length -> impossible
-      if(A < digitSet.length){
-        steps.push('可能な桁集合が不足しているため候補は0');
-        return {count:0, candidates:[], steps};
-      }
-      // compute via inclusion-exclusion: number of sequences of length n over alphabet which include all k special items at least once
-      const k = digitSet.length;
-      const n = pinLen;
-      // Use formula: sum_{i=0..k} (-1)^i * C(k,i) * (A - i)^n
-      let total = 0;
-      for(let i=0;i<=k;i++){
-        const comb = binom(k,i);
-        const term = comb * Math.pow(A - i, n);
-        total += (i%2===0) ? term : -term;
-      }
-      steps.push(`包除原理で計算: A=${A}, k=${k}, n=${n} -> ${total}`);
-      // If count reasonable, attempt to list via brute force with pruning
-      const cap = 3000;
-      let candidates = [];
-      if(total <= cap){
-        const alphabetArr = alphabet;
-        function rec(i, cur, used){
-          if(i===n){
-            // check used contains all digitSet
-            const usedSet = new Set(used);
-            let ok = digitSet.every(d => usedSet.has(String(d)));
-            if(ok) candidates.push(cur.join(''));
-            return;
-          }
-          for(const d of alphabetArr){
-            rec(i+1, cur.concat(d), used.concat(d));
-          }
-        }
-        rec(0, [], []);
-      }
-      return {count: total, candidates, steps};
-    }
-
-    // partial mode: candidates are sequences of length n over 0-9, but we want to count those that include at least one of digitSet? or digitSet are just possible digits.
-    // For simplicity, we'll return Universe size with note.
-    if(mode === 'partial'){
-      const n = pinLen;
-      const count = Math.pow(10, n);
-      steps.push(`partial mode: すべての0-9を許容 -> ${count} 通り (10^${n})`);
-      const cap=500;
-      let candidates=[];
-      if(count<=cap){
-        function rec(i, cur){
-          if(i===n){ candidates.push(cur.join('')); return; }
-          for(let d=0; d<10; d++) rec(i+1, cur.concat(String(d)));
-        }
-        rec(0,[]);
-      }
-      return {count, candidates, steps};
-    }
-
-    // fallback
-    return {count:0,candidates:[],steps:['条件が複雑で計算不可（フォールバック）']};
-  }
-
-  /**
-   * Calculate binomial coefficient C(n,k) = n! / (k!(n-k)!)
-   * Used in inclusion-exclusion principle for 'must' mode calculations
-   * Implements iterative formula to avoid factorial overflow: C(n,k) = ∏(i=1..k) [(n-k+i)/i]
-   * @param {number} n - Total items
-   * @param {number} k - Items to choose
-   * @returns {number} Binomial coefficient (rounded to avoid floating-point errors)
-   */
-  function binom(n,k){
-    if(k<0||k>n) return 0;
-    k = Math.min(k, n-k); // Optimization: C(n,k) = C(n,n-k)
-    let res = 1;
-    for(let i=1;i<=k;i++){
-      res = res * (n - (k - i)) / i; // Iterative multiplication and division to prevent overflow
-    }
-    return Math.round(res); // Round to handle floating-point precision issues
-  }
+  // computeCandidates / parseWildcards / binom live in pin-engine.js now and
+  // are imported at the top of this file. The legacy inline implementations
+  // were removed so that the engine has a single source of truth.
 
   // UI binding for calc button
   el('calc-btn').addEventListener('click', ()=>{
@@ -697,7 +523,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     const mode = el('mode').value;
     const allowDup = el('allow-dup').checked;
     const wildsRaw = el('wildcards').value.trim();
-    const wilds = parseWildcardsOrNull(wildsRaw, pinLen);
+    const wilds = parseWildcards(wildsRaw, pinLen);
     const maxList = 1000; // Fixed display limit
     const showSteps = el('show-steps').checked;
 
@@ -719,7 +545,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
       steps.forEach((step, idx) => {
         const line = document.createElement('div');
         line.style.marginBottom = '6px';
-        line.textContent = `${idx + 1}. ${step}`;
+        line.textContent = `${idx + 1}. ${translateStep(step)}`;
         stepsEl.appendChild(line);
       });
       stepsEl.style.display = 'block';
@@ -742,16 +568,16 @@ document.addEventListener('DOMContentLoaded', ()=>{
         const more = document.createElement('div');
         more.style.marginTop = '12px';
         more.style.color = 'var(--muted)';
-        more.textContent = `... 残り ${candidates.length - displayLimit} 件（全 ${count} 件）`;
+        more.textContent = t('cand.truncated', {remaining: candidates.length - displayLimit, count});
         const note = document.createElement('div');
         note.style.fontSize = '13px';
         note.style.marginTop = '6px';
-        note.textContent = '※ 全パターンはCSVエクスポートで確認できます';
+        note.textContent = t('cand.csvNote');
         more.appendChild(note);
         candEl.appendChild(more);
       }
     } else {
-      candEl.textContent = '(一覧は条件次第で省略されました)';
+      candEl.textContent = t('cand.empty');
     }
   });
 
@@ -768,7 +594,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   el('use-from-sim').addEventListener('click', ()=>{
     if(!window._simResult || !window._simResult.candidates || window._simResult.candidates.length === 0){
-      showToast('攻撃シミュレーションタブで解析を実行してください', 'warning');
+      showToast(t('sim.needSimTab'), 'warning');
       return;
     }
 
@@ -790,7 +616,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
       el('pin-length').value = simLength;
     }
 
-    showToast('攻撃シミュレーション結果を反映しました', 'success');
+    showToast(t('sim.pushedToast'), 'success');
   });
 
   // Show/hide calculation steps in real-time
@@ -804,11 +630,11 @@ document.addEventListener('DOMContentLoaded', ()=>{
         window._calcResult.steps.forEach((step, idx) => {
           const line = document.createElement('div');
           line.style.marginBottom = '6px';
-          line.textContent = `${idx + 1}. ${step}`;
+          line.textContent = `${idx + 1}. ${translateStep(step)}`;
           stepsEl.appendChild(line);
         });
       } else if(!stepsEl.textContent.trim()){
-        stepsEl.textContent = '計算を実行すると、ここに計算過程が表示されます。';
+        stepsEl.textContent = t('steps.placeholder');
       }
     } else {
       stepsEl.style.display = 'none';
@@ -818,12 +644,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   // Initialize steps display
   el('calculation-steps').style.display = 'none';
 
-  function parseWildcardsOrNull(raw, pinLen){
-    if(!raw) return null;
-    const toks = raw.split(',').map(t=>t.trim());
-    if(toks.length !== pinLen) return null;
-    return toks;
-  }
+  // parseWildcardsOrNull was removed; parseWildcards (from pin-engine) is
+  // now the only entry point and performs stricter validation.
 
   /* -----------------------
      Attack simulation: Individual analyzers
@@ -853,8 +675,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
       }
     });
     window._attackResults.finger = candidates;
-    el('finger-result').innerHTML = `<strong>検出された数字:</strong> ${candidates.length ? candidates.join(', ') : '(なし)'}<br><small>閾値 ${threshold} 以上の濃度を持つキー</small>`;
-    showToast('指紋解析完了', 'success');
+    el('finger-result').innerHTML = t('finger.result', {digits: candidates, threshold});
+    showToast(t('finger.doneToast'), 'success');
   });
 
   el('clear-finger').addEventListener('click', ()=>{
@@ -865,7 +687,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     });
     el('finger-result').innerHTML = '';
     window._attackResults.finger = null;
-    showToast('指紋データをクリアしました');
+    showToast(t('finger.clearedToast'));
   });
 
   /**
@@ -890,8 +712,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
     const orderConfidence = Math.round((thermalPairs[0].t / (thermalPairs[1]?.t || thermalPairs[0].t || 1)) * 100);
 
     window._attackResults.thermal = {candidates, orderConfidence};
-    el('thermal-result').innerHTML = `<strong>検出された数字:</strong> ${candidates.length ? candidates.join(', ') : '(なし)'}<br><strong>順序確度:</strong> ${orderConfidence}%<br><small>経過時間: ${timeS}秒、温度閾値 3℃以上</small>`;
-    showToast('熱解析完了（減衰停止）', 'success');
+    el('thermal-result').innerHTML = t('thermal.result', {digits: candidates, orderConfidence, timeS});
+    showToast(t('thermal.doneToast'), 'success');
   });
 
   /**
@@ -906,35 +728,39 @@ document.addEventListener('DOMContentLoaded', ()=>{
     const file = el('audio-file').files[0];
 
     if(file){
-      // File-based analysis
+      // File-based analysis. Enforce an upper size bound and always close
+      // the AudioContext (both success and failure paths) so decoded buffers
+      // and the audio thread don't linger across repeated analyses.
+      if(file.size > AUDIO_MAX_BYTES){
+        showToast(t('audio.tooLarge', {limitMB: Math.floor(AUDIO_MAX_BYTES / 1024 / 1024)}), 'error');
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (e)=>{
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const finish = ()=>{ try { ctx.close(); } catch (_) { /* ignore */ } };
         ctx.decodeAudioData(e.target.result, (buf)=>{
           const data = buf.getChannelData(0);
-          let peaks=0;
-          let inPeak=false;
-          const stride=200;
-          for(let i=0;i<data.length;i+=stride){
-            const val = Math.abs(data[i]);
-            if(!inPeak && val>0.3){ peaks++; inPeak=true; }
-            if(inPeak && val<0.1){ inPeak=false; }
-          }
+          const peaks = countPeaks(data, PEAK_DEFAULTS);
           window._attackResults.audio = peaks;
           window.audioPeakCount = peaks;
-          el('audio-result').innerHTML = `<strong>検出ピーク数:</strong> ${peaks}<br><strong>推定PIN桁数:</strong> ${peaks}<br><small>音声ファイルから検出</small>`;
-          showToast('音響解析完了', 'success');
-        }, ()=>{ showToast('音声ファイルの解析に失敗しました', 'error'); });
+          el('audio-result').innerHTML = t('audio.resultFile', {peaks});
+          showToast(t('audio.doneToast'), 'success');
+          finish();
+        }, ()=>{
+          showToast(t('audio.decodeFailed'), 'error');
+          finish();
+        });
       };
       reader.readAsArrayBuffer(file);
     } else if(audioTapCount > 0){
       // Keypad-based analysis
       window._attackResults.audio = audioTapCount;
       window.audioPeakCount = audioTapCount;
-      el('audio-result').innerHTML = `<strong>検出打鍵回数:</strong> ${audioTapCount}<br><strong>推定PIN桁数:</strong> ${audioTapCount}<br><small>テンキー入力から検出</small>`;
-      showToast('音響解析完了', 'success');
+      el('audio-result').innerHTML = t('audio.resultKeypad', {taps: audioTapCount});
+      showToast(t('audio.doneToast'), 'success');
     } else {
-      showToast('テンキーでPINを入力するか、音声ファイルを選択してください', 'warning');
+      showToast(t('audio.inputNeeded'), 'warning');
     }
   });
 
@@ -948,7 +774,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
    */
   el('analyze-video').addEventListener('click', ()=>{
     if(videoPinInput.length === 0){
-      showToast('テンキーでPINを入力してください', 'warning');
+      showToast(t('video.needInput'), 'warning');
       return;
     }
 
@@ -965,7 +791,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     if(videoAngle === 'tilt'){
       confidence -= 30;
       // Tilted view: lower accuracy, might miss some digits
-      const accuracy = Math.max(0.5, 1 - pixelErr/50);
+      const accuracy = videoAccuracy(pixelErr);
       const detectedCount = Math.ceil(candidates.length * accuracy);
       candidates = candidates.slice(0, detectedCount);
     }
@@ -982,8 +808,14 @@ document.addEventListener('DOMContentLoaded', ()=>{
     confidence = Math.max(0, Math.min(100, confidence));
 
     window._attackResults.video = {candidates, confidence};
-    el('video-result').innerHTML = `<strong>入力PIN:</strong> ${videoPinInput.join('')}<br><strong>検出された数字:</strong> ${candidates.join(', ')}<br><strong>視点:</strong> ${videoAngle === 'top' ? '真上' : '斜め'}<br><strong>誤差:</strong> ${pixelErr}px<br><strong>信頼度:</strong> ${confidence.toFixed(0)}%`;
-    showToast('盗撮解析完了', 'success');
+    el('video-result').innerHTML = t('video.result', {
+      pin: videoPinInput.join(''),
+      digits: candidates,
+      angle: videoAngle,
+      pixelErr,
+      confidence: Math.round(confidence),
+    });
+    showToast(t('video.doneToast'), 'success');
   });
 
   /* -----------------------
@@ -1028,11 +860,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
     // Generate PIN ranking
     const ranking = generatePINRanking(union, estimatedLength, results);
-    console.log('[DEBUG] PIN Ranking:', {union, estimatedLength, rankingLength: ranking.length, ranking});
     displayPINRanking(ranking);
 
     // Update summary
-    el('sim-candidates').textContent = union.length ? union.join(', ') : '(なし)';
+    el('sim-candidates').textContent = union.length ? union.join(', ') : t('label.none');
     el('sim-length').textContent = String(estimatedLength);
     el('sim-order-confidence').textContent = thermalOrderConfidence ? (thermalOrderConfidence + '%') : '—';
 
@@ -1043,7 +874,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
       scores: scores,
       ranking: ranking
     };
-    showToast('全手法を統合しました', 'success');
+    showToast(t('sim.doneToast'), 'success');
   }
 
   /**
@@ -1061,32 +892,24 @@ document.addEventListener('DOMContentLoaded', ()=>{
     // Overall assessment
     const totalScore = Object.values(scores).reduce((a,b)=>a+b, 0) / 4;
     if(totalScore > 60){
-      hints.push('⚠️ <strong>高リスク:</strong> 複数の攻撃手法から有効な情報が得られています。PIN認証の脆弱性が深刻です。');
+      hints.push(t('hint.riskHigh'));
     } else if(totalScore > 30){
-      hints.push('⚡ <strong>中リスク:</strong> いくつかの攻撃手法が有効でした。追加の防御策を検討してください。');
+      hints.push(t('hint.riskMid'));
     } else {
-      hints.push('✓ <strong>低リスク:</strong> 現在の攻撃手法では限定的な情報しか得られていません。');
+      hints.push(t('hint.riskLow'));
     }
 
     // Specific method recommendations
-    if(scores.finger > 50){
-      hints.push('🔍 <strong>指紋対策:</strong> 入力後は画面を清掃し、疎油性コーティングの使用を推奨します。');
-    }
-    if(scores.thermal > 50){
-      hints.push('🌡️ <strong>熱対策:</strong> 熱検出を防ぐため、ダミー入力やランダムキーへのタッチを検討してください。');
-    }
-    if(scores.audio > 0){
-      hints.push('🔊 <strong>音響対策:</strong> 静音キーパッドの使用、または環境音を活用した音響カモフラージュが有効です。');
-    }
-    if(scores.video > 50){
-      hints.push('📹 <strong>盗撮対策:</strong> 入力時は手で覆う、画面に視覚的な障壁を設置することを推奨します。');
-    }
+    if(scores.finger > 50)  hints.push(t('hint.finger'));
+    if(scores.thermal > 50) hints.push(t('hint.thermal'));
+    if(scores.audio > 0)    hints.push(t('hint.audio'));
+    if(scores.video > 50)   hints.push(t('hint.video'));
 
     // Candidate space analysis
     if(candidates.length <= 4 && length === 4){
-      hints.push('🎯 <strong>危険:</strong> 候補数字が' + candidates.length + '個のみ。' + Math.pow(candidates.length, length) + '通りの総当たり攻撃が現実的です。');
+      hints.push(t('hint.candidateTight', {len: candidates.length, total: Math.pow(candidates.length, length)}));
     } else if(candidates.length <= 6){
-      hints.push('⚠️ 候補数字が絞り込まれています（' + candidates.length + '個）。組み合わせ数を増やす対策が必要です。');
+      hints.push(t('hint.candidateNarrow', {len: candidates.length}));
     }
 
     return hints.join('<br><br>');
@@ -1124,7 +947,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
     }
 
     generateCombinations(candidates, length);
-    console.log('[DEBUG] Generated PINs:', {candidates, length, pinsGenerated: pins.length, samplePins: pins.slice(0, 5)});
 
     // Score each PIN based on attack results
     const scored = pins.map(pin => {
@@ -1167,15 +989,14 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   function displayPINRanking(ranking){
     const container = el('pin-ranking');
-    console.log('[DEBUG] displayPINRanking called:', {container, ranking});
-
-    if(!container){
-      console.error('[ERROR] pin-ranking container not found!');
-      return;
-    }
+    if(!container) return;
 
     if(!ranking || ranking.length === 0){
-      container.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:12px">候補数字を解析後、ランキングが表示されます</div>';
+      const empty = document.createElement('div');
+      empty.className = 'ranking-empty';
+      empty.textContent = t('sim.rankingPlaceholder');
+      container.innerHTML = '';
+      container.appendChild(empty);
       return;
     }
 
@@ -1190,13 +1011,12 @@ document.addEventListener('DOMContentLoaded', ()=>{
       `;
       container.appendChild(div);
     });
-    console.log('[DEBUG] Ranking displayed, container children:', container.children.length);
   }
 
   el('run-sim').addEventListener('click', simRun);
 
   el('push-to-calc').addEventListener('click', ()=>{
-    if(!window._simResult) { showToast('先に「シミュレーション実行」を押してください', 'warning'); return; }
+    if(!window._simResult) { showToast(t('sim.needRun'), 'warning'); return; }
     const arr = window._simResult.candidates;
     // set digit pick accordingly
     qa('#digit-pick .digit').forEach(d=>{
@@ -1526,10 +1346,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
       // Record current input length - only mask digits entered AFTER this point
       handCoverStartIndex = handCoverInput.length;
       // Keep existing input visible (already entered before mode was turned on)
-      showToast('手で隠すモードON: これ以降の入力がマスクされます', 'info');
+      showToast(t('cover.on'), 'info');
     } else {
       // When turning off, masked digits stay masked (permanent effect)
-      showToast('手で隠すモードOFF: マスク済みの数字はそのまま', 'info');
+      showToast(t('cover.off'), 'info');
     }
   });
 
@@ -1542,7 +1362,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     handCoverStartIndex = 0; // Reset masking start index
     maskedIndices.clear(); // Clear all masked indices
     updateHandCoverDisplay(false);
-    showToast('入力をクリアしました');
+    showToast(t('cover.cleared'));
   });
 
   /* -----------------------
@@ -1559,26 +1379,26 @@ document.addEventListener('DOMContentLoaded', ()=>{
     const payload = collectSession();
     const filename = `pin-threat-sim-session_${getTimestamp()}.json`;
     downloadBlob(JSON.stringify(payload, null, 2), filename, 'application/json');
-    showToast('セッションデータをエクスポートしました', 'success');
+    showToast(t('export.sessionDone'), 'success');
   });
   el('download-csv').addEventListener('click', ()=>{
     // Export all candidates from calculation result
     if(!window._calcResult || !window._calcResult.candidates || window._calcResult.candidates.length === 0){
-      showToast('エクスポートする候補がありません', 'warning');
+      showToast(t('export.csvEmpty'), 'warning');
       return;
     }
     const allCandidates = window._calcResult.candidates;
     const csv = 'candidate\n' + allCandidates.join('\n');
     const filename = `candidates_${getTimestamp()}.csv`;
     downloadBlob(csv, filename, 'text/csv');
-    showToast(`候補リストをCSVでエクスポートしました（全 ${allCandidates.length} 件）`, 'success');
+    showToast(t('export.csvDone', {total: allCandidates.length}), 'success');
   });
 
   el('export-sim').addEventListener('click', ()=>{
-    if(!window._simResult){ showToast('先にシミュレーション実行してください', 'warning'); return; }
+    if(!window._simResult){ showToast(t('sim.needSim'), 'warning'); return; }
     const filename = `sim-result_${getTimestamp()}.json`;
     downloadBlob(JSON.stringify(window._simResult,null,2), filename, 'application/json');
-    showToast('シミュレーション結果をエクスポートしました', 'success');
+    showToast(t('export.simDone'), 'success');
   });
 
   /**
@@ -1640,13 +1460,19 @@ document.addEventListener('DOMContentLoaded', ()=>{
   /* -----------------------
      Simple page helpers
      ----------------------- */
-  // polyfill for qa find convenience
-  if(!Array.prototype.find){
-    Array.prototype.find = function(cb){ for(const v of this){ if(cb(v)) return v; } return undefined; };
-  }
+  // (Array.prototype.find has been standard since ES2015; the polyfill was
+  // removed because the module target is modern evergreen browsers.)
 
   // initialize default
   el('finger-threshold').value = 30;
   // initial sim run to populate nothing
   window._simResult = {candidates:[], length:4, orderConfidence:0};
-});
+}
+
+// With type="module", scripts are deferred. Fire bootstrap either now or
+// when the DOM finishes parsing.
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', bootstrap);
+} else {
+  bootstrap();
+}
