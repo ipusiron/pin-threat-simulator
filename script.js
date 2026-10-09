@@ -1629,6 +1629,9 @@ function bootstrap(){
   el('finger-threshold').value = 30;
   // initial sim run to populate nothing
   window._simResult = {candidates:[], length:4, orderConfidence:0};
+  // When opened through a share link (#digits=...), run the calculation once
+  // so the recipient sees the result without pressing the button.
+  if(parseHash(window.location.hash).digits){ el('calc-btn').click(); }
 }
 
 // With type="module", scripts are deferred. Fire bootstrap either now or
