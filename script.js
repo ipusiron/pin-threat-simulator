@@ -8,6 +8,7 @@
 import {
   computeCandidates, parseWildcards,
   countPeaks, videoAccuracy, PEAK_DEFAULTS, thermalDecay,
+  videoConfidence, radarScore, methodScores, rankPins, hintLevel,
 } from './pin-engine.js';
 import {t, translateStep, setLang, getLang} from './pts-messages.js';
 
@@ -876,28 +877,19 @@ function bootstrap(){
     // Use actual input digits as base
     let candidates = Array.from(new Set(videoPinInput));
 
-    // Calculate confidence based on viewing angle and pixel error
-    let confidence = 100;
+    // Confidence (0-100) via the engine: 100 - anglePenalty - errorPenalty.
+    const confidence = videoConfidence({viewpoint: videoAngle, pixelErr});
 
-    // Angle penalty: tilt reduces confidence by 30%
+    // Detection-count reduction: tilt applies the accuracy formula; high
+    // pixel error further halves the detected digits (floor 1).
     if(videoAngle === 'tilt'){
-      confidence -= 30;
-      // Tilted view: lower accuracy, might miss some digits
       const accuracy = videoAccuracy(pixelErr);
       const detectedCount = Math.ceil(candidates.length * accuracy);
       candidates = candidates.slice(0, detectedCount);
     }
-
-    // Pixel error penalty: 0-50px range, higher error reduces confidence
-    const errorPenalty = Math.min(50, pixelErr * 1.5);
-    confidence -= errorPenalty;
-
     if(pixelErr > 20){
-      // High error: significantly reduced accuracy
       candidates = candidates.slice(0, Math.max(1, Math.ceil(candidates.length / 2)));
     }
-
-    confidence = Math.max(0, Math.min(100, confidence));
 
     window._attackResults.video = {candidates, confidence};
     el('video-result').innerHTML = t('video.result', {
@@ -935,13 +927,8 @@ function bootstrap(){
     const estimatedLength = results.audio || Number(el('pin-length').value) || 4;
     const thermalOrderConfidence = results.thermal?.orderConfidence || 0;
 
-    // Calculate attack effectiveness scores
-    const scores = {
-      finger: results.finger ? Math.min(100, results.finger.length * 15) : 0,
-      thermal: results.thermal ? Math.min(100, results.thermal.candidates.length * 12 + thermalOrderConfidence/2) : 0,
-      audio: results.audio ? Math.min(100, 80) : 0,
-      video: results.video ? Math.min(100, results.video.candidates.length * 15 + results.video.confidence * 0.5) : 0
-    };
+    // Attack effectiveness scores (0-100 per method) via the pure engine.
+    const scores = methodScores(results);
 
     // Draw radar chart (cache scores so language changes can re-render it)
     window._lastSimScores = scores;
@@ -982,15 +969,11 @@ function bootstrap(){
   function generateExpertHints(results, scores, candidates, length){
     const hints = [];
 
-    // Overall assessment
-    const totalScore = Object.values(scores).reduce((a,b)=>a+b, 0) / 4;
-    if(totalScore > 60){
-      hints.push(t('hint.riskHigh'));
-    } else if(totalScore > 30){
-      hints.push(t('hint.riskMid'));
-    } else {
-      hints.push(t('hint.riskLow'));
-    }
+    // Overall risk tier from the engine (avg of per-method scores).
+    const level = hintLevel(scores);
+    if(level === 'high')      hints.push(t('hint.riskHigh'));
+    else if(level === 'mid')  hints.push(t('hint.riskMid'));
+    else                      hints.push(t('hint.riskLow'));
 
     // Specific method recommendations
     if(scores.finger > 50)  hints.push(t('hint.finger'));
@@ -1041,40 +1024,8 @@ function bootstrap(){
 
     generateCombinations(candidates, length);
 
-    // Score each PIN based on attack results
-    const scored = pins.map(pin => {
-      let score = 0;
-
-      // Thermal order preference (recently pressed keys)
-      if(results.thermal && results.thermal.candidates){
-        const thermalOrder = results.thermal.candidates;
-        for(let i=0; i<Math.min(pin.length, thermalOrder.length); i++){
-          if(pin[i] === thermalOrder[i]) score += 15;
-        }
-      }
-
-      // Fingerprint intensity (more likely if high density)
-      if(results.finger){
-        const fingerSet = new Set(results.finger);
-        for(const d of pin){
-          if(fingerSet.has(d)) score += 8;
-        }
-      }
-
-      // Video detection (exact matches)
-      if(results.video && results.video.candidates){
-        const videoSet = new Set(results.video.candidates);
-        for(const d of pin){
-          if(videoSet.has(d)) score += 10;
-        }
-      }
-
-      // Penalize common patterns
-      if(/^(\d)\1+$/.test(pin)) score -= 20; // All same digit
-      if(pin === '1234' || pin === '0000') score -= 10; // Common PINs
-
-      return {pin, score};
-    });
+    // Score each PIN via the pure engine (RANK_WEIGHTS lives there).
+    const scored = rankPins(pins, results);
 
     // Sort by score descending and return top 10
     return scored.sort((a,b) => b.score - a.score).slice(0, 10);

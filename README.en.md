@@ -256,7 +256,7 @@ Case 2: overhead with high error
 - Input PIN: 1234
 - Detections: 2 (high error halves them)
 - Confidence: 100 - 0 - 37.5 = 62.5%
-- Radar score: `2*15 + 62.5*0.5 = 61`
+- Radar score: `2*15 + 62.5*0.5 = 61.25`
 
 Case 3: tilted, low error
 - Settings: viewpoint = tilted, error = 8px
