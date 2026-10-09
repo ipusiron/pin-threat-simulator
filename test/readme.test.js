@@ -14,7 +14,21 @@ import {computeCandidates, PEAK_DEFAULTS} from '../pin-engine.js';
 const here = dirname(fileURLToPath(import.meta.url));
 const root = dirname(here);
 const readme = readFileSync(join(root, 'README.md'), 'utf8');
+const readmeEn = readFileSync(join(root, 'README.en.md'), 'utf8');
 const technical = readFileSync(join(root, 'TECHNICAL.md'), 'utf8');
+
+function h2h3(markdown){
+  // Return the ordered list of H2 and H3 headings.
+  const out = [];
+  let inCode = false;
+  for(const raw of markdown.split(/\r?\n/)){
+    if(/^```/.test(raw)){ inCode = !inCode; continue; }
+    if(inCode) continue;
+    const m = raw.match(/^(#{2,3})\s+(.+?)\s*$/);
+    if(m) out.push({level: m[1].length, text: m[2]});
+  }
+  return out;
+}
 
 // --- 1. Compute the examples the README shows and compare to engine --------
 test('README calc examples match the engine', () => {
@@ -151,7 +165,57 @@ test('Each H2 section in README has at most 2 bold spans', () => {
   }
 });
 
-// --- 9. List items must not start with "- **name**" ----------------------
+// --- 9. README.en.md structure ------------------------------------------
+test('README.en.md starts with the English/Japanese toggle line and no YAML', () => {
+  const firstLine = readmeEn.split(/\r?\n/)[0];
+  assert.equal(firstLine, 'English · [日本語](README.md)',
+    'first line of README.en.md must be the toggle line');
+  assert.ok(!/^<!--/.test(readmeEn),
+    'README.en.md must not carry a YAML / HTML comment header');
+});
+
+test('README.md includes the English toggle after the YAML comment, before H1', () => {
+  // The YAML lives in an HTML comment at the top. The toggle line must sit
+  // between the end of that comment and the first H1.
+  const m = readme.match(/^<!--[\s\S]+?-->\s*\n([^\n]+)\n/);
+  assert.ok(m, 'YAML HTML comment at top of README.md not found');
+  assert.equal(m[1].trim(), '[English](README.en.md) · 日本語');
+});
+
+test('README.md and README.en.md expose the same H2 / H3 structure', () => {
+  const jaH = h2h3(readme);
+  const enH = h2h3(readmeEn);
+  const jaLv = jaH.map(h => h.level).join(',');
+  const enLv = enH.map(h => h.level).join(',');
+  assert.equal(enLv, jaLv,
+    `heading levels differ.\nja (${jaH.length}): ${jaLv}\nen (${enH.length}): ${enLv}`);
+  assert.equal(enH.length, jaH.length,
+    `heading count differs: ja=${jaH.length} en=${enH.length}`);
+});
+
+test('README.en.md image refs exist and every assets/en/*.png is referenced', () => {
+  const refs = Array.from(readmeEn.matchAll(/!\[[^\]]*\]\((assets\/[^)]+)\)/g)).map(m => m[1]);
+  for(const r of refs){
+    assert.ok(existsSync(join(root, r)), `${r} is referenced from README.en.md but missing`);
+  }
+  const enDir = join(root, 'assets', 'en');
+  if(existsSync(enDir)){
+    const pngs = readdirSync(enDir).filter(f => f.toLowerCase().endsWith('.png'));
+    for(const png of pngs){
+      const needle = `assets/en/${png}`;
+      assert.ok(readmeEn.includes(needle),
+        `assets/en/${png} exists but is not referenced from README.en.md`);
+    }
+  }
+});
+
+test('README.en.md includes the same calc numbers (81 and 27)', () => {
+  for(const n of ['81', '27', '24', '36', '12', '6', '10,000', '1,000']){
+    assert.ok(readmeEn.includes(n), `README.en.md is missing the number ${n}`);
+  }
+});
+
+// --- 10. List items must not start with "- **name**" ----------------------
 test('No list item in README starts with a bolded label like "- **name**"', () => {
   const lines = readme.split(/\r?\n/);
   let inCode = false;
