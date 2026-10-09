@@ -108,7 +108,8 @@ test('primary element ids are present', () => {
     'video-keypad','video-angle','pixel-error','analyze-video','run-sim',
     'radar-chart','expert-hints','pin-ranking','push-to-calc','tab-sec',
     'random-keypad','shuffle-keypad','hand-cover-mode','theme-toggle',
-    'download-json','lang-toggle',
+    'download-json','lang-toggle','try-audio-sample','copy-share-link',
+    'share-fallback',
   ];
   for(const id of ids){
     const re = new RegExp(`id=["']${id}["']`);

@@ -9,6 +9,7 @@ import {
   computeCandidates, parseWildcards,
   countPeaks, videoAccuracy, PEAK_DEFAULTS, thermalDecay,
   videoConfidence, radarScore, methodScores, rankPins, hintLevel,
+  parseHash, buildHash,
 } from './pin-engine.js';
 import {t, translateStep, setLang, getLang} from './pts-messages.js';
 
@@ -53,6 +54,9 @@ function bootstrap(){
     try { localStorage.setItem(key, val); } catch (_) { /* ignore */ }
   }
   function resolveInitialLang(){
+    // Hash wins over query so shared links are self-contained.
+    const hash = parseHash(window.location.hash);
+    if(hash.lang === 'ja' || hash.lang === 'en') return hash.lang;
     const qs = new URLSearchParams(window.location.search);
     const q = qs.get('lang');
     if(q === 'ja' || q === 'en') return q;
@@ -129,6 +133,8 @@ function bootstrap(){
       setLang(next);
       safeLocalSet('lang', next);
       reapplyActive();
+      // The hash may already carry a lang= key; keep it in sync.
+      if(typeof updateHashFromState === 'function') updateHashFromState();
     });
   }
 
@@ -353,9 +359,93 @@ function bootstrap(){
     b.className='digit';
     b.textContent = String(d);
     b.dataset.d = String(d);
-    b.addEventListener('click', ()=> b.classList.toggle('on'));
+    b.addEventListener('click', ()=> {
+      b.classList.toggle('on');
+      updateHashFromState();
+    });
     digitPick.appendChild(b);
   }
+
+  /* -----------------------
+     Shared-link state (URL #hash) for the calc tab
+     ----------------------- */
+  // Writes digits / len / mode / dup / wild / lang into location.hash so a
+  // link can carry the full calculation state. parseHash / buildHash live in
+  // pin-engine.js; the two sides are round-trip tested there.
+  function readCalcState(){
+    const digits = qa('#digit-pick .digit.on')
+      .map(d => d.dataset.d).sort().join('');
+    return {
+      digits,
+      len: Number(el('pin-length').value) || null,
+      mode: el('mode').value || null,
+      allowDup: el('allow-dup').checked,
+      wilds: el('wildcards').value.trim() || null,
+      lang: getLang(),
+    };
+  }
+  let hashSyncSuspended = false;
+  function updateHashFromState(){
+    if(hashSyncSuspended) return;
+    const next = '#' + buildHash(readCalcState());
+    try {
+      history.replaceState(null, '', next);
+    } catch (_) {
+      // Non-fatal: file:// may deny replaceState.
+      window.location.hash = next;
+    }
+  }
+  function applyCalcStateFromHash(){
+    const h = parseHash(window.location.hash);
+    hashSyncSuspended = true;
+    try {
+      if(typeof h.digits === 'string'){
+        const set = new Set(h.digits.split(''));
+        qa('#digit-pick .digit').forEach(b => {
+          if(set.has(b.dataset.d)) b.classList.add('on');
+          else b.classList.remove('on');
+        });
+      }
+      if(h.len != null) el('pin-length').value = h.len;
+      if(h.mode) el('mode').value = h.mode;
+      if(h.allowDup != null) el('allow-dup').checked = h.allowDup;
+      if(h.wilds != null) el('wildcards').value = h.wilds;
+    } finally {
+      hashSyncSuspended = false;
+    }
+  }
+  el('pin-length').addEventListener('input', updateHashFromState);
+  el('mode').addEventListener('change', updateHashFromState);
+  el('allow-dup').addEventListener('change', updateHashFromState);
+  el('wildcards').addEventListener('input', updateHashFromState);
+  // Apply the initial hash state once the controls are wired. Also mirror
+  // the resolved values back into the hash so a visitor without one still
+  // ends up with a shareable URL after any interaction.
+  applyCalcStateFromHash();
+  updateHashFromState();
+
+  // "Copy shareable link" button. Uses the modern Clipboard API with a
+  // same-origin fallback: on failure the URL is placed into a visible,
+  // read-only input the user can select manually.
+  el('copy-share-link').addEventListener('click', ()=>{
+    updateHashFromState();
+    const url = window.location.href;
+    const done = ()=> showToast(t('share.copied'), 'success');
+    const fail = ()=>{
+      const fb = el('share-fallback');
+      if(fb){
+        fb.value = url;
+        fb.style.display = 'block';
+        fb.select();
+      }
+      showToast(t('share.copyFailed'), 'warning');
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(done, fail);
+    } else {
+      fail();
+    }
+  });
 
   /* -----------------------
      Keypad utilities

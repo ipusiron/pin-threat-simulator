@@ -7,6 +7,7 @@ import {
   videoAccuracy, thermalDecay, generateCombinations,
   videoConfidence, radarScore, methodScores, rankPins, hintLevel,
   RANK_WEIGHTS, VIDEO_ANGLE_PENALTY,
+  parseHash, buildHash,
 } from '../pin-engine.js';
 
 // ---- Oracle (reference implementation) ---------------------------------
@@ -351,6 +352,62 @@ test('rankPins penalizes 1111 (all-same) and 1234 (common)', () => {
   assert.equal(by['1111'], RANK_WEIGHTS.allSame);
   assert.equal(by['1234'], RANK_WEIGHTS.commonPin);
   assert.equal(by['1235'], 0);
+});
+
+// ---- hintLevel ----------------------------------------------------------
+// ---- parseHash / buildHash (shareable calc-state link) ------------------
+test('parseHash reads every documented key', () => {
+  const h = parseHash('#digits=123&len=4&mode=allowed&dup=1&wild=*,*,2,*&lang=en');
+  assert.equal(h.digits, '123');
+  assert.equal(h.len, 4);
+  assert.equal(h.mode, 'allowed');
+  assert.equal(h.allowDup, true);
+  assert.equal(h.wilds, '*,*,2,*');
+  assert.equal(h.lang, 'en');
+});
+
+test('parseHash ignores malformed / out-of-range values silently', () => {
+  const h = parseHash('digits=12a&len=99&mode=wat&dup=yes&wild=&lang=de');
+  assert.equal(h.digits, undefined); // 'a' is not a digit
+  assert.equal(h.len,    undefined); // 99 is out of 1..8
+  assert.equal(h.mode,   undefined); // not one of the three
+  assert.equal(h.allowDup, undefined);
+  assert.equal(h.wilds,  undefined); // empty
+  assert.equal(h.lang,   undefined);
+});
+
+test('parseHash on empty / nil input returns an empty object', () => {
+  assert.deepEqual(parseHash(''), {});
+  assert.deepEqual(parseHash('#'), {});
+  assert.deepEqual(parseHash(null), {});
+  assert.deepEqual(parseHash(undefined), {});
+});
+
+test('buildHash + parseHash round-trip preserves the full state', () => {
+  const cases = [
+    {digits:'123', len:4, mode:'allowed', allowDup:true,  wilds:'*,*,2,*', lang:'ja'},
+    {digits:'0',   len:1, mode:'must',    allowDup:false, wilds:'0',       lang:'en'},
+    {digits:'',    len:4, mode:'partial', allowDup:true,  wilds:null,      lang:null},
+    {digits:'59',  len:8, mode:'allowed', allowDup:false},
+  ];
+  for(const s of cases){
+    const parsed = parseHash('#' + buildHash(s));
+    if(s.digits) assert.equal(parsed.digits, s.digits);
+    if(s.len != null) assert.equal(parsed.len, s.len);
+    if(s.mode) assert.equal(parsed.mode, s.mode);
+    if(s.allowDup != null) assert.equal(parsed.allowDup, s.allowDup);
+    if(s.wilds) assert.equal(parsed.wilds, s.wilds);
+    if(s.lang) assert.equal(parsed.lang, s.lang);
+  }
+});
+
+test('buildHash emits only set keys and uses `#digits=` style', () => {
+  assert.equal(buildHash({digits:'123', len:4, mode:'allowed', allowDup:true}),
+    'digits=123&len=4&mode=allowed&dup=1');
+  assert.equal(buildHash({mode:'partial', allowDup:false}),
+    'mode=partial&dup=0');
+  assert.equal(buildHash({}), '');
+  assert.equal(buildHash(null), '');
 });
 
 // ---- hintLevel ----------------------------------------------------------

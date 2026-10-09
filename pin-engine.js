@@ -101,6 +101,64 @@ export function rankPins(pins, results){
   return out;
 }
 
+// Parse a calc-tab state string from the URL hash. Returns a partial state
+// object; invalid or unknown keys are ignored silently so a malformed link
+// still opens the app in a safe default state.
+export function parseHash(raw){
+  const out = {};
+  if(raw == null) return out;
+  const s = String(raw).replace(/^#/, '');
+  if(!s) return out;
+  for(const kv of s.split('&')){
+    if(!kv) continue;
+    const i = kv.indexOf('=');
+    if(i < 0) continue;
+    const k = kv.slice(0, i);
+    let v;
+    try { v = decodeURIComponent(kv.slice(i + 1)); }
+    catch(_) { continue; }
+    switch(k){
+      case 'digits':
+        if(/^[0-9]*$/.test(v)) out.digits = v;
+        break;
+      case 'len': {
+        const n = parseInt(v, 10);
+        if(Number.isFinite(n) && n >= 1 && n <= 8) out.len = n;
+        break;
+      }
+      case 'mode':
+        if(v === 'allowed' || v === 'must' || v === 'partial') out.mode = v;
+        break;
+      case 'dup':
+        if(v === '1' || v === '0') out.allowDup = (v === '1');
+        break;
+      case 'wild':
+        if(v) out.wilds = v;
+        break;
+      case 'lang':
+        if(v === 'ja' || v === 'en') out.lang = v;
+        break;
+    }
+  }
+  return out;
+}
+
+// Build a URL-hash string from a calc-tab state. Only emits keys whose value
+// is set; symmetric with parseHash so round-trips preserve state exactly.
+export function buildHash(state){
+  if(!state) return '';
+  const parts = [];
+  if(state.digits != null && String(state.digits).length){
+    parts.push('digits=' + encodeURIComponent(String(state.digits)));
+  }
+  if(state.len != null) parts.push('len=' + state.len);
+  if(state.mode) parts.push('mode=' + state.mode);
+  if(state.allowDup != null) parts.push('dup=' + (state.allowDup ? '1' : '0'));
+  if(state.wilds) parts.push('wild=' + encodeURIComponent(state.wilds));
+  if(state.lang) parts.push('lang=' + state.lang);
+  return parts.join('&');
+}
+
 // Risk tier used to pick the first expert-hint line. average > 60 -> 'high',
 // > 30 -> 'mid', else 'low'. The 4-method mean matches script.js's intent.
 export function hintLevel(scores){

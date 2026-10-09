@@ -92,6 +92,10 @@ const DICT = {
     'export.csvEmpty':          () => 'エクスポートする候補がありません',
     'export.csvDone':           ({total}) => `候補リストをCSVでエクスポートしました（全 ${total} 件）`,
 
+    // Share-link toasts.
+    'share.copied':             () => '共有リンクをコピーしました',
+    'share.copyFailed':         () => 'クリップボードにコピーできませんでした。入力欄のURLを選択してください',
+
     // Hand cover mode toasts.
     'cover.on':                 () => '手で隠すモードON: これ以降の入力がマスクされます',
     'cover.off':                () => '手で隠すモードOFF: マスク済みの数字はそのまま',
@@ -157,6 +161,8 @@ const DICT = {
     'ui.calcBtn':               () => '計算する',
     'ui.clearBtn':              () => 'クリア',
     'ui.useFromSim':            () => '攻撃シミュレーション結果を使う',
+    'ui.shareBtn':              () => '共有リンクをコピー',
+    'ui.shareBtnTitle':         () => '計算タブの状態（候補集合・桁数・モード・重複・ワイルドカード）を含むURLをコピー',
 
     'ui.resultHeading':         () => '結果',
     'ui.resultTotalLabel':      () => '候補総数:',
@@ -360,6 +366,10 @@ const DICT = {
     'export.csvEmpty':          () => 'No candidates to export.',
     'export.csvDone':           ({total}) => `Exported the candidate list as CSV (${total} items).`,
 
+    // Share-link toasts.
+    'share.copied':              () => 'Copied the shareable link.',
+    'share.copyFailed':          () => 'Could not copy to clipboard. Select the URL from the input field.',
+
     // Hand cover mode toasts.
     'cover.on':                 () => 'Hand-cover mode ON: subsequent input is masked.',
     'cover.off':                () => 'Hand-cover mode OFF: already-masked digits stay masked.',
@@ -434,6 +444,8 @@ const DICT = {
     'ui.calcBtn':               () => 'Calculate',
     'ui.clearBtn':              () => 'Clear',
     'ui.useFromSim':            () => 'Use the attack-simulation result',
+    'ui.shareBtn':               () => 'Copy shareable link',
+    'ui.shareBtnTitle':          () => 'Copy a URL that carries the calc state (digits, length, mode, duplicates, wildcards).',
 
     'ui.resultHeading':         () => 'Result',
     'ui.resultTotalLabel':      () => 'Total candidates:',
