@@ -33,17 +33,30 @@ const DICT = {
     'audio.resultKeypad':       ({taps}) => `<strong>検出打鍵回数:</strong> ${taps}<br><strong>推定PIN桁数:</strong> ${taps}<br><small>テンキー入力から検出</small>`,
 
     // Fingerprint analysis UI.
-    'finger.result':            ({digits, threshold}) => `<strong>検出された数字:</strong> ${digits.length ? digits.join(', ') : '(なし)'}<br><small>閾値 ${threshold} 以上の濃度を持つキー</small>`,
+    'finger.result':            ({digits, threshold}) => (
+      `<strong>検出された数字:</strong> ${digits.length ? digits.join(', ') : '(なし)'}` +
+      `<br><small>閾値 ${threshold} 以上の濃度を持つキー</small>`
+    ),
     'finger.doneToast':         () => '指紋解析完了',
     'finger.clearedToast':      () => '指紋データをクリアしました',
 
     // Thermal analysis UI.
-    'thermal.result':           ({digits, orderConfidence, timeS}) => `<strong>検出された数字:</strong> ${digits.length ? digits.join(', ') : '(なし)'}<br><strong>順序確度:</strong> ${orderConfidence}%<br><small>経過時間: ${timeS}秒、温度閾値 3℃以上</small>`,
+    'thermal.result':           ({digits, orderConfidence, timeS}) => (
+      `<strong>検出された数字:</strong> ${digits.length ? digits.join(', ') : '(なし)'}` +
+      `<br><strong>順序確度:</strong> ${orderConfidence}%` +
+      `<br><small>経過時間: ${timeS}秒、温度閾値 3℃以上</small>`
+    ),
     'thermal.doneToast':        () => '熱解析完了（減衰停止）',
 
     // Shoulder surfing UI.
     'video.needInput':          () => 'テンキーでPINを入力してください',
-    'video.result':             ({pin, digits, angle, pixelErr, confidence}) => `<strong>入力PIN:</strong> ${pin}<br><strong>検出された数字:</strong> ${digits.join(', ')}<br><strong>視点:</strong> ${angle === 'top' ? '真上' : '斜め'}<br><strong>誤差:</strong> ${pixelErr}px<br><strong>信頼度:</strong> ${confidence}%`,
+    'video.result':             ({pin, digits, angle, pixelErr, confidence}) => (
+      `<strong>入力PIN:</strong> ${pin}` +
+      `<br><strong>検出された数字:</strong> ${digits.join(', ')}` +
+      `<br><strong>視点:</strong> ${angle === 'top' ? '真上' : '斜め'}` +
+      `<br><strong>誤差:</strong> ${pixelErr}px` +
+      `<br><strong>信頼度:</strong> ${confidence}%`
+    ),
     'video.doneToast':          () => '盗撮解析完了',
 
     // Integration tab.

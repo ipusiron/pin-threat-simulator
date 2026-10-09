@@ -146,7 +146,9 @@ test('engine matches brute-force oracle across many cases', () => {
             const got = computeCandidates(input);
             caseCount++;
             assert.equal(got.count, expected.count,
-              `oracle count mismatch: S=${JSON.stringify(S)} n=${n} mode=${mode} dup=${allowDup} w=${JSON.stringify(wilds)}: got ${got.count}, oracle ${expected.count}`);
+              `oracle count mismatch: S=${JSON.stringify(S)} n=${n} ` +
+              `mode=${mode} dup=${allowDup} w=${JSON.stringify(wilds)}: ` +
+              `got ${got.count}, oracle ${expected.count}`);
             if(got.candidates && got.candidates.length > 0){
               assert.deepEqual(got.candidates, expected.candidates,
                 `oracle candidates mismatch: S=${JSON.stringify(S)} n=${n} mode=${mode} dup=${allowDup} w=${JSON.stringify(wilds)}`);
