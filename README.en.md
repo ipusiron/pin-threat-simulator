@@ -32,10 +32,10 @@ Open the demo and try it directly in your browser.
 ## 📸 Screenshots
 
 >![Candidate set calculation with wildcards](assets/en/screenshot.png)
->*Calculation tab: candidate set {1,2,3} with `*,*,2,*` narrows the space to 27 PINs.*
+>*Calculation tab: candidate set {1,2,3} with `*,*,2,*` narrows the space to 27 PINs, with the steps, the candidate list, and the "Copy shareable link" button all in frame.*
 
 >![Integrated analysis across four attack methods](assets/en/screenshot2.png)
->*Attack simulation tab: integrated analysis across four methods, with the radar chart.*
+>*Attack simulation tab: integrated analysis of four methods, scrolled so the radar chart and the estimated PIN ranking share the frame.*
 
 >![Randomized keypad demo](assets/en/screenshot3.png)
 >*Security tab: randomized keypad after a shuffle.*
