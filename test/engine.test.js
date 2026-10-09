@@ -5,6 +5,9 @@ import assert from 'node:assert/strict';
 import {
   computeCandidates, parseWildcards, binom, countPeaks,
   videoAccuracy, thermalDecay, generateCombinations,
+  videoConfidence, radarScore, methodScores, rankPins, hintLevel,
+  RANK_WEIGHTS, VIDEO_ANGLE_PENALTY,
+  parseHash, buildHash,
 } from '../pin-engine.js';
 
 // ---- Oracle (reference implementation) ---------------------------------
@@ -259,4 +262,160 @@ test('generateCombinations enumerates lex-sorted and respects cap', () => {
   const out = generateCombinations(['1','2','3'], 2, 100);
   assert.deepEqual(out, ['11','12','13','21','22','23','31','32','33']);
   assert.equal(generateCombinations(['0','1','2','3','4','5','6','7','8','9'], 5, 100), null);
+});
+
+// ---- videoConfidence / radarScore (shoulder-surfing model) ---------------
+test('VIDEO_ANGLE_PENALTY matches index.html options top=0 and tilt=30', () => {
+  assert.equal(VIDEO_ANGLE_PENALTY.top, 0);
+  assert.equal(VIDEO_ANGLE_PENALTY.tilt, 30);
+});
+
+test('videoConfidence boundary values', () => {
+  assert.equal(videoConfidence({viewpoint:'top',  pixelErr:0}),  100);
+  assert.equal(videoConfidence({viewpoint:'top',  pixelErr:8}),  88);     // 100-0-12
+  assert.equal(videoConfidence({viewpoint:'top',  pixelErr:25}), 62.5);   // 100-0-37.5
+  assert.equal(videoConfidence({viewpoint:'tilt', pixelErr:8}),  58);     // 100-30-12
+  assert.equal(videoConfidence({viewpoint:'tilt', pixelErr:30}), 25);     // 100-30-45
+  assert.equal(videoConfidence({viewpoint:'tilt', pixelErr:50}), 20);     // 100-30-50
+  assert.equal(videoConfidence({viewpoint:'tilt', pixelErr:100}), 20);    // cap
+  // 33.4 -> 100-0-50.1 clamped to penalty 50 -> 50
+  assert.equal(videoConfidence({viewpoint:'top', pixelErr:33.4}), 50);
+});
+
+test('radarScore matches the README formula and clamps at 100', () => {
+  assert.equal(radarScore(4, 88),  100);        // 4*15 + 88*0.5 = 104 -> 100
+  assert.equal(radarScore(2, 62.5), 61.25);
+  assert.equal(radarScore(4, 58),  89);
+  assert.equal(radarScore(1, 25),  27.5);
+  assert.equal(radarScore(0, 0),   0);
+});
+
+test('README 4 shoulder-surfing examples match the engine end-to-end', () => {
+  const cases = [
+    {viewpoint:'top',  pixelErr:8,  cands:4, expectConf:88,   expectScore:100},
+    {viewpoint:'top',  pixelErr:25, cands:2, expectConf:62.5, expectScore:61.25},
+    {viewpoint:'tilt', pixelErr:8,  cands:4, expectConf:58,   expectScore:89},
+    {viewpoint:'tilt', pixelErr:30, cands:1, expectConf:25,   expectScore:27.5},
+  ];
+  for(const c of cases){
+    const conf = videoConfidence({viewpoint:c.viewpoint, pixelErr:c.pixelErr});
+    assert.equal(conf, c.expectConf,
+      `confidence mismatch: ${JSON.stringify(c)} -> ${conf}`);
+    const sc = radarScore(c.cands, conf);
+    assert.equal(sc, c.expectScore,
+      `score mismatch: ${JSON.stringify(c)} -> ${sc}`);
+  }
+});
+
+// ---- methodScores -------------------------------------------------------
+test('methodScores mirrors the simRun() calculation', () => {
+  const results = {
+    finger: ['1','2','3'],                                        // 3*15=45
+    thermal: {candidates:['4','5'], orderConfidence:80},          // 2*12+40=64
+    audio: 4,                                                     // 80
+    video: {candidates:['1','2','3','4'], confidence:88},         // radar=100
+  };
+  const s = methodScores(results);
+  assert.equal(s.finger, 45);
+  assert.equal(s.thermal, 64);
+  assert.equal(s.audio, 80);
+  assert.equal(s.video, 100);
+  const z = methodScores({});
+  assert.deepEqual(z, {finger:0, thermal:0, audio:0, video:0});
+});
+
+// ---- rankPins -----------------------------------------------------------
+test('rankPins uses RANK_WEIGHTS as documented', () => {
+  // Weights must match the published scoring table.
+  assert.equal(RANK_WEIGHTS.thermalOrder, 15);
+  assert.equal(RANK_WEIGHTS.finger, 8);
+  assert.equal(RANK_WEIGHTS.video, 10);
+  assert.equal(RANK_WEIGHTS.allSame, -20);
+  assert.equal(RANK_WEIGHTS.commonPin, -10);
+});
+
+test('rankPins scores "1221" by thermal-order +15, finger +8, video +10', () => {
+  const results = {
+    finger: ['1','2'],                                      // every digit in pin
+    thermal: {candidates:['1','2','2','1'], orderConfidence:0},  // all 4 match in order
+    video: {candidates:['1','2']},                          // every digit in pin
+  };
+  const [{pin, score}] = rankPins(['1221'], results);
+  assert.equal(pin, '1221');
+  // 4 pos * 15 (thermal order) + 4 digits * 8 (finger) + 4 digits * 10 (video) = 60+32+40=132
+  assert.equal(score, 132);
+});
+
+test('rankPins penalizes 1111 (all-same) and 1234 (common)', () => {
+  const scored = rankPins(['1111','1234','1235'], {});
+  const by = Object.fromEntries(scored.map(x => [x.pin, x.score]));
+  assert.equal(by['1111'], RANK_WEIGHTS.allSame);
+  assert.equal(by['1234'], RANK_WEIGHTS.commonPin);
+  assert.equal(by['1235'], 0);
+});
+
+// ---- hintLevel ----------------------------------------------------------
+// ---- parseHash / buildHash (shareable calc-state link) ------------------
+test('parseHash reads every documented key', () => {
+  const h = parseHash('#digits=123&len=4&mode=allowed&dup=1&wild=*,*,2,*&lang=en');
+  assert.equal(h.digits, '123');
+  assert.equal(h.len, 4);
+  assert.equal(h.mode, 'allowed');
+  assert.equal(h.allowDup, true);
+  assert.equal(h.wilds, '*,*,2,*');
+  assert.equal(h.lang, 'en');
+});
+
+test('parseHash ignores malformed / out-of-range values silently', () => {
+  const h = parseHash('digits=12a&len=99&mode=wat&dup=yes&wild=&lang=de');
+  assert.equal(h.digits, undefined); // 'a' is not a digit
+  assert.equal(h.len,    undefined); // 99 is out of 1..8
+  assert.equal(h.mode,   undefined); // not one of the three
+  assert.equal(h.allowDup, undefined);
+  assert.equal(h.wilds,  undefined); // empty
+  assert.equal(h.lang,   undefined);
+});
+
+test('parseHash on empty / nil input returns an empty object', () => {
+  assert.deepEqual(parseHash(''), {});
+  assert.deepEqual(parseHash('#'), {});
+  assert.deepEqual(parseHash(null), {});
+  assert.deepEqual(parseHash(undefined), {});
+});
+
+test('buildHash + parseHash round-trip preserves the full state', () => {
+  const cases = [
+    {digits:'123', len:4, mode:'allowed', allowDup:true,  wilds:'*,*,2,*', lang:'ja'},
+    {digits:'0',   len:1, mode:'must',    allowDup:false, wilds:'0',       lang:'en'},
+    {digits:'',    len:4, mode:'partial', allowDup:true,  wilds:null,      lang:null},
+    {digits:'59',  len:8, mode:'allowed', allowDup:false},
+  ];
+  for(const s of cases){
+    const parsed = parseHash('#' + buildHash(s));
+    if(s.digits) assert.equal(parsed.digits, s.digits);
+    if(s.len != null) assert.equal(parsed.len, s.len);
+    if(s.mode) assert.equal(parsed.mode, s.mode);
+    if(s.allowDup != null) assert.equal(parsed.allowDup, s.allowDup);
+    if(s.wilds) assert.equal(parsed.wilds, s.wilds);
+    if(s.lang) assert.equal(parsed.lang, s.lang);
+  }
+});
+
+test('buildHash emits only set keys and uses `#digits=` style', () => {
+  assert.equal(buildHash({digits:'123', len:4, mode:'allowed', allowDup:true}),
+    'digits=123&len=4&mode=allowed&dup=1');
+  assert.equal(buildHash({mode:'partial', allowDup:false}),
+    'mode=partial&dup=0');
+  assert.equal(buildHash({}), '');
+  assert.equal(buildHash(null), '');
+});
+
+// ---- hintLevel ----------------------------------------------------------
+test('hintLevel thresholds at 60 and 30 (strict >)', () => {
+  assert.equal(hintLevel({a:80, b:80, c:80, d:80}), 'high'); // 80 > 60
+  assert.equal(hintLevel({a:60, b:60, c:60, d:60}), 'mid');  // not > 60, but > 30
+  assert.equal(hintLevel({a:40, b:40, c:40, d:40}), 'mid');
+  assert.equal(hintLevel({a:30, b:30, c:30, d:30}), 'low');  // not > 30
+  assert.equal(hintLevel({a:0,  b:0,  c:0,  d:0}),  'low');
+  assert.equal(hintLevel({}), 'low');
 });

@@ -31,6 +31,12 @@ const DICT = {
     'audio.doneToast':          () => '音響解析完了',
     'audio.resultFile':         ({peaks}) => `<strong>検出ピーク数:</strong> ${peaks}<br><strong>推定PIN桁数:</strong> ${peaks}<br><small>音声ファイルから検出</small>`,
     'audio.resultKeypad':       ({taps}) => `<strong>検出打鍵回数:</strong> ${taps}<br><strong>推定PIN桁数:</strong> ${taps}<br><small>テンキー入力から検出</small>`,
+    'audio.resultSample':       ({peaks}) => (
+      `<strong>検出ピーク数:</strong> ${peaks}` +
+      `<br><strong>推定PIN桁数:</strong> ${peaks}` +
+      `<br><small>サンプル: pin-taps-4.wav（打鍵4回）</small>`
+    ),
+    'audio.sampleFailed':       () => 'サンプル音声の読み込みに失敗しました',
 
     // Fingerprint analysis UI.
     'finger.result':            ({digits, threshold}) => (
@@ -85,6 +91,10 @@ const DICT = {
     'export.simDone':           () => 'シミュレーション結果をエクスポートしました',
     'export.csvEmpty':          () => 'エクスポートする候補がありません',
     'export.csvDone':           ({total}) => `候補リストをCSVでエクスポートしました（全 ${total} 件）`,
+
+    // Share-link toasts.
+    'share.copied':             () => '共有リンクをコピーしました',
+    'share.copyFailed':         () => 'クリップボードにコピーできませんでした。入力欄のURLを選択してください',
 
     // Hand cover mode toasts.
     'cover.on':                 () => '手で隠すモードON: これ以降の入力がマスクされます',
@@ -151,6 +161,8 @@ const DICT = {
     'ui.calcBtn':               () => '計算する',
     'ui.clearBtn':              () => 'クリア',
     'ui.useFromSim':            () => '攻撃シミュレーション結果を使う',
+    'ui.shareBtn':              () => '共有リンクをコピー',
+    'ui.shareBtnTitle':         () => '計算タブの状態（候補集合・桁数・モード・重複・ワイルドカード）を含むURLをコピー',
 
     'ui.resultHeading':         () => '結果',
     'ui.resultTotalLabel':      () => '候補総数:',
@@ -174,6 +186,8 @@ const DICT = {
     'ui.audioTapCountLabel':    () => '打鍵回数:',
     'ui.audioFileLabel':        () => '音声ファイル',
     'ui.audioFileTooltip':      () => 'PIN入力時の打鍵音を録音した音声ファイル（MP3、WAVなど）をアップロード。波形から音のピーク（打鍵回数）を検出し、PINの桁数を推定します。',
+    'ui.audioSampleBtn':        () => 'サンプル音声で試す',
+    'ui.audioSampleTitle':      () => '同梱の人工音声（打鍵4回・約1.6秒）で音響解析の動作を確認します',
 
     'ui.videoHeading':          () => '📹 盗撮解析',
     'ui.videoTooltip':          () => 'カメラ盗撮やショルダーハッキングで覗き見ます。視点や誤差によって検出精度が変わります。',
@@ -265,6 +279,12 @@ const DICT = {
       `<br><strong>Estimated PIN length:</strong> ${taps}` +
       `<br><small>Detected from keypad input.</small>`
     ),
+    'audio.resultSample':       ({peaks}) => (
+      `<strong>Detected peaks:</strong> ${peaks}` +
+      `<br><strong>Estimated PIN length:</strong> ${peaks}` +
+      `<br><small>Sample: pin-taps-4.wav (4 taps)</small>`
+    ),
+    'audio.sampleFailed':       () => 'Failed to load the sample audio.',
 
     // Fingerprint analysis UI.
     'finger.result':            ({digits, threshold}) => (
@@ -346,6 +366,10 @@ const DICT = {
     'export.csvEmpty':          () => 'No candidates to export.',
     'export.csvDone':           ({total}) => `Exported the candidate list as CSV (${total} items).`,
 
+    // Share-link toasts.
+    'share.copied':              () => 'Copied the shareable link.',
+    'share.copyFailed':          () => 'Could not copy to clipboard. Select the URL from the input field.',
+
     // Hand cover mode toasts.
     'cover.on':                 () => 'Hand-cover mode ON: subsequent input is masked.',
     'cover.off':                () => 'Hand-cover mode OFF: already-masked digits stay masked.',
@@ -420,6 +444,8 @@ const DICT = {
     'ui.calcBtn':               () => 'Calculate',
     'ui.clearBtn':              () => 'Clear',
     'ui.useFromSim':            () => 'Use the attack-simulation result',
+    'ui.shareBtn':               () => 'Copy shareable link',
+    'ui.shareBtnTitle':          () => 'Copy a URL that carries the calc state (digits, length, mode, duplicates, wildcards).',
 
     'ui.resultHeading':         () => 'Result',
     'ui.resultTotalLabel':      () => 'Total candidates:',
@@ -443,6 +469,8 @@ const DICT = {
     'ui.audioTapCountLabel':    () => 'Keypresses:',
     'ui.audioFileLabel':        () => 'Audio file',
     'ui.audioFileTooltip':      () => 'Upload a recording of the keypress sounds (MP3, WAV, etc.). Peak detection in the waveform estimates the PIN length.',
+    'ui.audioSampleBtn':        () => 'Try sample',
+    'ui.audioSampleTitle':      () => 'Run the acoustic analyzer on the bundled sample (4 taps, ~1.6s).',
 
     'ui.videoHeading':          () => '📹 Shoulder-surfing analysis',
     'ui.videoTooltip':          () => 'Simulate camera-based or over-the-shoulder observation. Viewpoint and error change the detection accuracy.',

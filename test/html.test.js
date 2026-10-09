@@ -108,10 +108,22 @@ test('primary element ids are present', () => {
     'video-keypad','video-angle','pixel-error','analyze-video','run-sim',
     'radar-chart','expert-hints','pin-ranking','push-to-calc','tab-sec',
     'random-keypad','shuffle-keypad','hand-cover-mode','theme-toggle',
-    'download-json','lang-toggle',
+    'download-json','lang-toggle','try-audio-sample','copy-share-link',
+    'share-fallback',
   ];
   for(const id of ids){
     const re = new RegExp(`id=["']${id}["']`);
     assert.ok(re.test(html), `id="${id}" missing in index.html`);
   }
 });
+
+test('buttons with visible text that translate an attribute also translate their text', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const html = await readFile('index.html', 'utf-8');
+  for(const id of ['copy-share-link','try-audio-sample']){
+    const m = html.match(new RegExp('<button[^>]*id="'+id+'"[^>]*>'));
+    assert.ok(m, id+' not found');
+    assert.ok(/data-i18n-attr=/.test(m[0]) ? /data-i18n-text/.test(m[0]) : true, id+' must carry data-i18n-text when data-i18n-attr is set');
+  }
+});
+

@@ -593,3 +593,12 @@ option{background:var(--bg);color:var(--accent)}
 
 /* Thermal canvas tap scaling: avoid overflow on narrow widths */
 #thermal-canvas{max-width:100%;height:auto}
+
+/* Shareable-link fallback input: hidden until the clipboard call fails,
+   then shown with the full URL for manual selection. */
+.share-fallback{
+  display:none;margin-top:8px;width:100%;box-sizing:border-box;
+  font-family:'JetBrains Mono',monospace;font-size:12px;padding:6px 8px;
+  border:1px solid var(--card-border);border-radius:6px;background:rgba(99,102,241,0.05);
+  color:var(--text);
+}

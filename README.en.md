@@ -32,10 +32,10 @@ Open the demo and try it directly in your browser.
 ## 📸 Screenshots
 
 >![Candidate set calculation with wildcards](assets/en/screenshot.png)
->*Calculation tab: candidate set {1,2,3} with `*,*,2,*` narrows the space to 27 PINs.*
+>*Calculation tab: candidate set {1,2,3} with `*,*,2,*` narrows the space to 27 PINs, with the steps, the candidate list, and the "Copy shareable link" button all in frame.*
 
 >![Integrated analysis across four attack methods](assets/en/screenshot2.png)
->*Attack simulation tab: integrated analysis across four methods, with the radar chart.*
+>*Attack simulation tab: integrated analysis of four methods, scrolled so the radar chart and the estimated PIN ranking share the frame.*
 
 >![Randomized keypad demo](assets/en/screenshot3.png)
 >*Security tab: randomized keypad after a shuffle.*
@@ -76,6 +76,17 @@ Open the demo and try it directly in your browser.
 2. Press "Analyze" on each card to run the individual analyzer
 3. Press "Integrate all methods" on the right panel to see the radar chart, expert hints, and the estimated PIN ranking
 4. Press "Push to PIN pattern calculation" to forward the result to the calc tab
+
+#### Try the acoustic analyzer with the bundled sample
+
+- The "Try sample" button on the acoustic card fetches the bundled `assets/samples/pin-taps-4.wav` (four taps, ~1.6 seconds) from the same origin and runs it through the existing peak-detection path
+- To record your own sample: a quiet room, the device microphone, keep taps at least 0.3 seconds apart, keep the file under 20 MB, and use a format the browser's `decodeAudioData` accepts (typically WAV / MP3 / OGG / AAC)
+
+#### Share the calc state via a link
+
+- The "Copy shareable link" button on the calc tab copies a URL whose `#` fragment carries the candidate set, length, mode, duplicates, wildcards, and language
+- If the clipboard call fails, an input field appears under the button with the URL so you can select it manually
+- Opening the shared link reproduces the same state (useful for classroom or training distribution)
 
 ### 3. Security
 
@@ -256,7 +267,7 @@ Case 2: overhead with high error
 - Input PIN: 1234
 - Detections: 2 (high error halves them)
 - Confidence: 100 - 0 - 37.5 = 62.5%
-- Radar score: `2*15 + 62.5*0.5 = 61`
+- Radar score: `2*15 + 62.5*0.5 = 61.25`
 
 Case 3: tilted, low error
 - Settings: viewpoint = tilted, error = 8px
@@ -657,16 +668,21 @@ pin-threat-simulator/
 │   │   ├── screenshot.png     # English screenshot of the calc tab
 │   │   ├── screenshot2.png    # English screenshot of the attack simulation tab
 │   │   └── screenshot3.png    # English screenshot of the security tab
+│   ├── samples/
+│   │   └── pin-taps-4.wav     # Bundled sample audio for the acoustic analyzer (4 taps, ~1.6s)
 │   ├── screenshot.png     # Japanese screenshot of the calc tab
 │   ├── screenshot2.png    # Japanese screenshot of the attack simulation tab
 │   └── screenshot3.png    # Japanese screenshot of the security tab
 ├── test/
+│   ├── audio.test.js      # Sample WAV verification (4 peaks, size <= 30KB, byte-equal regeneration)
 │   ├── contrast.test.js   # WCAG AA contrast across light / dark themes
 │   ├── engine.test.js     # Expected values and brute-force oracle sweep for the engine
 │   ├── format.test.js     # Line length and minimum file size
 │   ├── html.test.js       # CSP / favicon / noscript / i18n / id presence
 │   ├── i18n.test.js       # Dictionary parity, no Japanese in en, no empty ja, no literals in script.js
 │   └── readme.test.js     # README / README.en.md examples, images, headings, forbidden words
+├── tools/
+│   └── gen-sample-wav.mjs # Node script that deterministically regenerates the bundled WAV
 ├── .gitignore             # Git ignore list
 ├── .nojekyll              # Disable Jekyll on GitHub Pages
 ├── CLAUDE.md              # Development guide for Claude Code

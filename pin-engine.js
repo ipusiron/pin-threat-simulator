@@ -20,6 +20,155 @@ export function videoAccuracy(pixelErr){
   return Math.max(0.5, 1 - err / 50);
 }
 
+// Angle penalty table for the shoulder-surfing confidence model. Must match
+// the index.html <select id="video-angle"> options and the README spec.
+export const VIDEO_ANGLE_PENALTY = { top: 0, tilt: 30 };
+
+// Shoulder-surfing confidence from viewpoint + pixel error.
+// confidence = 100 - anglePenalty - min(50, pixelErr * 1.5), clamped to [0,100].
+// (Pure number, no detection-count reduction; see script.js for the latter.)
+export function videoConfidence({viewpoint, pixelErr} = {}){
+  const anglePenalty = VIDEO_ANGLE_PENALTY[viewpoint] ?? 0;
+  const err = Math.max(0, Number(pixelErr) || 0);
+  const errorPenalty = Math.min(50, err * 1.5);
+  const c = 100 - anglePenalty - errorPenalty;
+  return Math.max(0, Math.min(100, c));
+}
+
+// Radar chart score for a single method (used by the shoulder-surfing lane
+// and reused by any method that reports a candidate count + confidence pair).
+// score = min(100, candidateCount * 15 + confidence * 0.5)
+export function radarScore(candidateCount, confidence){
+  const n = Math.max(0, Number(candidateCount) || 0);
+  const c = Math.max(0, Number(confidence) || 0);
+  return Math.min(100, n * 15 + c * 0.5);
+}
+
+// Per-method radar scores from the aggregate attack-results object.
+// Mirrors script.js:simRun()'s score block; keep the two in sync by calling
+// this function from the UI layer.
+export function methodScores(results){
+  const r = results || {};
+  const finger = r.finger ? Math.min(100, r.finger.length * 15) : 0;
+  const thermalOC = (r.thermal && r.thermal.orderConfidence) || 0;
+  const thermal = r.thermal
+    ? Math.min(100, r.thermal.candidates.length * 12 + thermalOC / 2)
+    : 0;
+  const audio = r.audio ? Math.min(100, 80) : 0;
+  const video = r.video
+    ? radarScore(r.video.candidates.length, r.video.confidence)
+    : 0;
+  return {finger, thermal, audio, video};
+}
+
+// Scoring weights for the PIN ranking. Positive = evidence, negative =
+// weak-pattern penalty. See TECHNICAL.md.
+export const RANK_WEIGHTS = {
+  thermalOrder: 15,   // +pt per position where PIN digit matches thermal order
+  finger: 8,          // +pt per PIN digit present in the fingerprint set
+  video: 10,          // +pt per PIN digit present in the shoulder-surfing set
+  allSame: -20,       // all digits identical (1111 etc.)
+  commonPin: -10,     // 1234 / 0000
+};
+
+// Score a list of candidate PINs against the aggregate attack results.
+// Returns [{pin, score}, ...] in the input order; call .sort() at the UI.
+export function rankPins(pins, results){
+  const r = results || {};
+  const W = RANK_WEIGHTS;
+  const out = [];
+  for(const pin of pins || []){
+    let score = 0;
+    if(r.thermal && r.thermal.candidates){
+      const order = r.thermal.candidates;
+      const m = Math.min(pin.length, order.length);
+      for(let i = 0; i < m; i++){
+        if(pin[i] === order[i]) score += W.thermalOrder;
+      }
+    }
+    if(r.finger){
+      const set = new Set(r.finger);
+      for(const d of pin) if(set.has(d)) score += W.finger;
+    }
+    if(r.video && r.video.candidates){
+      const set = new Set(r.video.candidates);
+      for(const d of pin) if(set.has(d)) score += W.video;
+    }
+    if(/^(\d)\1+$/.test(pin)) score += W.allSame;
+    if(pin === '1234' || pin === '0000') score += W.commonPin;
+    out.push({pin, score});
+  }
+  return out;
+}
+
+// Parse a calc-tab state string from the URL hash. Returns a partial state
+// object; invalid or unknown keys are ignored silently so a malformed link
+// still opens the app in a safe default state.
+export function parseHash(raw){
+  const out = {};
+  if(raw == null) return out;
+  const s = String(raw).replace(/^#/, '');
+  if(!s) return out;
+  for(const kv of s.split('&')){
+    if(!kv) continue;
+    const i = kv.indexOf('=');
+    if(i < 0) continue;
+    const k = kv.slice(0, i);
+    let v;
+    try { v = decodeURIComponent(kv.slice(i + 1)); }
+    catch(_) { continue; }
+    switch(k){
+      case 'digits':
+        if(/^[0-9]*$/.test(v)) out.digits = v;
+        break;
+      case 'len': {
+        const n = parseInt(v, 10);
+        if(Number.isFinite(n) && n >= 1 && n <= 8) out.len = n;
+        break;
+      }
+      case 'mode':
+        if(v === 'allowed' || v === 'must' || v === 'partial') out.mode = v;
+        break;
+      case 'dup':
+        if(v === '1' || v === '0') out.allowDup = (v === '1');
+        break;
+      case 'wild':
+        if(v) out.wilds = v;
+        break;
+      case 'lang':
+        if(v === 'ja' || v === 'en') out.lang = v;
+        break;
+    }
+  }
+  return out;
+}
+
+// Build a URL-hash string from a calc-tab state. Only emits keys whose value
+// is set; symmetric with parseHash so round-trips preserve state exactly.
+export function buildHash(state){
+  if(!state) return '';
+  const parts = [];
+  if(state.digits != null && String(state.digits).length){
+    parts.push('digits=' + encodeURIComponent(String(state.digits)));
+  }
+  if(state.len != null) parts.push('len=' + state.len);
+  if(state.mode) parts.push('mode=' + state.mode);
+  if(state.allowDup != null) parts.push('dup=' + (state.allowDup ? '1' : '0'));
+  if(state.wilds) parts.push('wild=' + encodeURIComponent(state.wilds));
+  if(state.lang) parts.push('lang=' + state.lang);
+  return parts.join('&');
+}
+
+// Risk tier used to pick the first expert-hint line. average > 60 -> 'high',
+// > 30 -> 'mid', else 'low'. The 4-method mean matches script.js's intent.
+export function hintLevel(scores){
+  const vals = scores ? Object.values(scores) : [];
+  const avg = vals.length ? vals.reduce((a,b) => a + (Number(b) || 0), 0) / vals.length : 0;
+  if(avg > 60) return 'high';
+  if(avg > 30) return 'mid';
+  return 'low';
+}
+
 // Thermal decay (exponential, tau=20s by default).
 export function thermalDecay(initial, elapsed, tau = 20){
   const t0 = Math.max(0, Number(initial) || 0);

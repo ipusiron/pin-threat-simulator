@@ -9,7 +9,10 @@ import {readFileSync, existsSync, readdirSync} from 'node:fs';
 import {execSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {dirname, join} from 'node:path';
-import {computeCandidates, PEAK_DEFAULTS} from '../pin-engine.js';
+import {
+  computeCandidates, PEAK_DEFAULTS,
+  videoConfidence, radarScore,
+} from '../pin-engine.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = dirname(here);
@@ -216,6 +219,52 @@ test('README.en.md includes the same calc numbers (81 and 27)', () => {
 });
 
 // --- 10. List items must not start with "- **name**" ----------------------
+// --- 11. Shoulder-surfing score examples in README / README.en.md /
+//         TECHNICAL.md are consistent with the engine ---------------------
+test('shoulder-surfing confidence + score examples match the engine', () => {
+  // The 4 published cases, one per paragraph.
+  const cases = [
+    {viewpoint:'top',  pixelErr:8,  cands:4, conf:88,   score:100},
+    {viewpoint:'top',  pixelErr:25, cands:2, conf:62.5, score:61.25},
+    {viewpoint:'tilt', pixelErr:8,  cands:4, conf:58,   score:89},
+    {viewpoint:'tilt', pixelErr:30, cands:1, conf:25,   score:27.5},
+  ];
+  for(const c of cases){
+    assert.equal(
+      videoConfidence({viewpoint:c.viewpoint, pixelErr:c.pixelErr}),
+      c.conf,
+      `videoConfidence ${JSON.stringify(c)}`
+    );
+    assert.equal(radarScore(c.cands, c.conf), c.score,
+      `radarScore ${JSON.stringify(c)}`);
+  }
+
+  // README.md must mention each published number verbatim, and there must be
+  // exactly 4 "ケース" headings (the task spec requires 4 examples).
+  const needlesJa = ['88%', '100', '62.5%', '61.25', '58%', '89', '25%', '27.5'];
+  for(const n of needlesJa){
+    assert.ok(readme.includes(n), `README.md missing shoulder-surfing number ${n}`);
+  }
+  const jaCaseCount = (readme.match(/^ケース\d:/gm) || []).length;
+  assert.equal(jaCaseCount, 4, `README.md has ${jaCaseCount} 'ケースN:' headings (expected 4)`);
+
+  // README.en.md must mention each published number.
+  const needlesEn = ['88%', '100', '62.5%', '61.25', '58%', '89', '25%', '27.5'];
+  for(const n of needlesEn){
+    assert.ok(readmeEn.includes(n), `README.en.md missing shoulder-surfing number ${n}`);
+  }
+  const enCaseCount = (readmeEn.match(/^Case \d:/gm) || []).length;
+  assert.equal(enCaseCount, 4, `README.en.md has ${enCaseCount} 'Case N:' headings (expected 4)`);
+
+  // TECHNICAL.md must at least mention videoAccuracy and the radar-score
+  // formula (either the inlined math or a reference to radarScore()).
+  assert.ok(technical.includes('videoAccuracy'), 'TECHNICAL.md missing videoAccuracy');
+  assert.ok(technical.includes('radarScore')
+    || technical.includes('× 15 + ')
+    || technical.includes('* 15 + '),
+    'TECHNICAL.md missing the radar-score formula for video');
+});
+
 test('No list item in README starts with a bolded label like "- **name**"', () => {
   const lines = readme.split(/\r?\n/);
   let inCode = false;

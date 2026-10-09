@@ -44,7 +44,12 @@ CI runs the same command on push and pull_request through `.github/workflows/tes
 - `index.html` - Main HTML with 3-tab UI structure, CSP meta, favicon, noscript
 - `script.js` - DOM wiring (event handlers, canvas drawing, state management)
 - `pin-engine.js` - Pure logic module: `computeCandidates`, `parseWildcards`, `binom`,
-  `countPeaks`, `videoAccuracy`, `thermalDecay`, `generateCombinations`
+  `countPeaks`, `videoAccuracy`, `thermalDecay`, `generateCombinations`,
+  `videoConfidence`, `radarScore`, `methodScores`, `rankPins`, `hintLevel`,
+  `parseHash`, `buildHash` (plus constants `PEAK_DEFAULTS`, `RANK_WEIGHTS`,
+  `VIDEO_ANGLE_PENALTY`, `ENUM_CAPS`)
+- `tools/gen-sample-wav.mjs` - Deterministic generator for the bundled sample WAV
+- `assets/samples/pin-taps-4.wav` - 4-tap sample used by the acoustic "Try sample" button
 - `pts-messages.js` - Centralized message dictionary (`ja` + `en`)
 - `style.css` - Styling and theming (dark/light mode)
 - `test/` - Node `--test` suites
@@ -116,7 +121,27 @@ This tool is **strictly for educational use** in controlled environments (classr
 2. Create UI controls in a new `.card` element
 3. Add result structure to `window._attackResults`
 4. Implement detection logic and call from `simRun()`
-5. Update `generatePINRanking()` scoring if needed
+5. Update `methodScores()` and `rankPins()` (both in `pin-engine.js`) if the
+   new method should feed the radar chart or the PIN ranking
+
+### Regenerating the sample audio
+
+The bundled `assets/samples/pin-taps-4.wav` is produced deterministically by
+`tools/gen-sample-wav.mjs`. Re-running it must emit byte-identical output;
+`test/audio.test.js` enforces that (and that `countPeaks` returns 4 for the
+file). Change the generator only together with the test.
+
+```bash
+node tools/gen-sample-wav.mjs
+```
+
+### Shareable calc-state link
+
+`pin-engine.js` exports `parseHash` / `buildHash` for the `#digits=…&len=…
+&mode=…&dup=…&wild=…&lang=…` scheme. `script.js` reads the hash on load,
+writes it back when any calc control changes (via `history.replaceState`),
+and the "Copy shareable link" button hands the full URL to
+`navigator.clipboard`.
 
 ### Changing calculation limits
 
