@@ -2,7 +2,10 @@
 
 開発者向けテクニカルドキュメント - PIN Threat Simulator
 
-このドキュメントでは、本ツールの技巧的な実装、複雑な仕組み、コアなロジック、工夫している部分について解説します。
+このドキュメントでは、本ツールの実装、仕組み、コアロジックの要点を解説します。
+エンジンの純粋ロジックは `pin-engine.js` に、画面に出す文言は `pts-messages.js` に、
+DOM 処理は `script.js` に分かれています。`script.js` は `type="module"` で読み込まれ、
+`pin-engine.js` と `pts-messages.js` を `import` します。
 
 ---
 
@@ -15,7 +18,11 @@
 5. [音響解析 - ピーク検出アルゴリズム](#音響解析---ピーク検出アルゴリズム)
 6. [PINランキング - 複合スコアリング](#pinランキング---複合スコアリング)
 7. [手で隠すモード - 永続的マスキング](#手で隠すモード---永続的マスキング)
-8. [パフォーマンス最適化](#パフォーマンス最適化)
+8. [テストとCI](#テストとci)
+9. [パフォーマンス最適化](#パフォーマンス最適化)
+10. [開発時の注意点](#開発時の注意点)
+11. [今後の拡張可能性](#今後の拡張可能性)
+12. [参考文献・関連技術](#参考文献関連技術)
 
 ---
 
@@ -23,149 +30,181 @@
 
 ### 概要
 
-本ツールの核となる組み合わせ論エンジン。3つのモード（制約ベース、必須ベース、部分指定ベース）で候補数を計算します。
+- 入力: `digits`（候補集合 S、0〜9 の部分集合、重複なし）、`pinLen` n（1〜8）、
+  `mode`（`allowed` / `must` / `partial`）、`allowDup`、`wilds`（長さ n の配列。
+  各要素は `*` か 1 桁の数字。`null` なら制約なし）
+- 出力: `{count, candidates, steps}`。`candidates` は辞書順。
+  件数が上限以下（allowed/must は 5,000、partial は 500）のときだけ列挙する
 
 ### 実装場所
 
-`script.js:480-686` - `computeCandidates()` 関数
+- `pin-engine.js:computeCandidates`
+- 補助: `parseWildcards`、`binom`、`generateCombinations`、`countPeaks`、`videoAccuracy`、`thermalDecay`
+- 期待値の総当たり照合: `test/engine.test.js`
 
-### 1. 制約ベース（Allowed Mode）
+### モード別の仕様
 
-**用途**: 「これらの数字だけを使う」という制約
+#### 1. 許容集合モード（allowed）
 
-**計算式**:
+- 各桁は S から選ぶ
+- 固定桁は指定の数字に固定する。その数字が S にないときは候補 0 とし、理由を `steps` に書く
+- `allowDup = false` なら全桁が互いに異なる（固定桁も使用済みに数える）
+- 計算式（重複あり）: 自由桁数 f、A = |S| として `A^f`
+- 計算式（重複なし）: `P(A - 固定桁で使った数, f) = ∏_{i=0..f-1}(A' - i)`
+
+実装の要点（`pin-engine.js` 内）:
+
 ```javascript
-// 重複あり
-count = A^n
-
-// 重複なし
-count = P(A, n) = A! / (A-n)!
-```
-
-**実装の工夫**:
-```javascript
-// 階乗の直接計算を避け、反復計算で精度を保つ
+if(allowDup){
+  const count = Math.pow(digitSet.length, f);
+  // ... 列挙は count <= ENUM_CAPS.allowed のときのみ
+}
+// no-dup
+const available = digitSet.filter(d => !fixedDup.has(d));
 let count = 1;
-for(let i = 0; i < length; i++){
-  count *= (alphabet - i);
-}
+for(let i = 0; i < f; i++) count *= (available.length - i);
 ```
 
-**理由**: `Math.pow()`よりも大きな数値での精度が高く、中間結果のオーバーフローを防ぐ
+- 反復乗算で中間結果のオーバーフローを避ける
+- `Math.pow` は重複ありのみで使用
 
-### 2. 必須ベース（Must Mode）
+#### 2. 必須包含モード（must）
 
-**用途**: 「これらの数字を必ず含む」という制約
+- 各桁は S から選び、かつ S のすべての数字を少なくとも 1 回含む
+- 固定桁は同様。固定桁の数字が S にないときは候補 0
+- `allowDup = false` は `n == |S|` のときのみ候補があり、固定桁を除いた残りの順列
+- `allowDup = true` は包除原理:
 
-**数学的背景**: 包除原理（Inclusion-Exclusion Principle）
-
-**計算式**:
 ```
-count = Σ(i=0 to k) (-1)^i × C(k,i) × (A-i)^n
+count = Σ_{i=0..k'} (-1)^i × C(k', i) × (A - i)^f
+
+A  = |S|
+f  = 自由桁数（n - 固定桁数）
+R  = 固定桁で含まれていない必須数字の集合、k' = |R|
 ```
 
-where:
-- `A`: 全アルファベットサイズ（通常10）
-- `k`: 必須数字の個数
-- `n`: PINの桁数
-- `C(k,i)`: 二項係数
+包除原理の実装（`countWithRequired`）:
 
-**実装** (script.js:565-586):
 ```javascript
-let total = 0;
-for(let i = 0; i <= mustDigits.length; i++){
-  const sign = (i % 2 === 0) ? 1 : -1;
-  const binom = binomial(mustDigits.length, i);
-  const base = alphabetSize - i;
-  const power = Math.pow(base, length);
-  total += sign * binom * power;
-}
-```
-
-**二項係数の計算** (script.js:622-638):
-```javascript
-function binomial(n, k){
-  if(k > n) return 0;
-  if(k === 0 || k === n) return 1;
-
-  k = Math.min(k, n - k); // 対称性を利用して計算量削減
-
-  let result = 1;
-  for(let i = 0; i < k; i++){
-    result *= (n - i);
-    result /= (i + 1);
-    result = Math.round(result); // 浮動小数点誤差を回避
+function countWithRequired(alphabetSize, n, requiredCount){
+  const k = requiredCount;
+  const A = alphabetSize;
+  let total = 0;
+  for(let i = 0; i <= k; i++){
+    const term = binom(k, i) * Math.pow(A - i, n);
+    total += (i % 2 === 0) ? term : -term;
   }
-  return result;
+  return total;
 }
 ```
 
-**工夫点**:
-- 対称性 `C(n,k) = C(n,n-k)` を利用して計算量を半減
-- 乗算と除算を交互に実行して中間結果のオーバーフローを防止
-- `Math.round()` で浮動小数点誤差を補正
+数学的背景: n 桁の列のうち、R に含まれるどれかの数字が「使われない」事象の個数を交互和で引く。
+`i` 個の必須数字を禁じたときの残りの選択肢は `A - i` 個で、それぞれ独立に n 桁並ぶので `(A - i)^n` 通り。
 
-### 3. 部分指定ベース（Partial Mode）
+#### 3. 部分特定モード（partial）
 
-**用途**: ワイルドカード `*` を使った部分的なPIN指定（例: `12**`）
+- 各桁は 0〜9 から選ぶ（S は使わない）
+- 固定桁は同様（固定桁の数字が S にあるかどうかはチェックしない）
+- `allowDup = false` なら全桁が互いに異なる
+- 列挙の上限は `ENUM_CAPS.partial = 500`（他モードよりも狭い。10 桁全列挙は現実的でないため）
 
-**実装** (script.js:640-662):
+### 固定された期待値（抜粋）
+
+| 入力 | 期待値 |
+| --- | --- |
+| S={1,2,3}, n=4, allowed, dup | 81 |
+| 同 `*,*,2,*` | 27 |
+| 同 `*,*,7,*`（7 ∉ S） | 0 |
+| S={1,2,3}, n=4, allowed, no-dup | 0 |
+| S={1,2,3,4}, n=4, allowed, no-dup | 24 |
+| 同 `*,*,2,*` | 6 |
+| S={1,2,3}, n=4, must, dup | 36 |
+| 同 `*,*,2,*` | 12 |
+| S={1,2,3}, n=3, must, no-dup | 6 |
+| 同 `*,2,*` | 2 |
+| S={1,2,3}, n=4, must, no-dup | 0 |
+| partial, dup, n=4 | 10000 |
+| 同 `*,*,2,*` | 1000 |
+| partial, no-dup, n=4 | 5040 |
+| 同 `*,*,2,*` | 504 |
+
+### 二項係数の実装
+
+反復式で中間結果のオーバーフローを避け、`Math.round` で浮動小数点誤差を補正します。
+対称性 `C(n,k) = C(n,n-k)` を利用して反復回数を半減します。
+
 ```javascript
-const wildcardCount = partial.split('').filter(c => c === '*').length;
-
-if(dupAllowed){
-  count = Math.pow(10, wildcardCount); // 10^w
-} else {
-  const fixedDigits = new Set(partial.replace(/\*/g, '').split(''));
-  const availableDigits = 10 - fixedDigits.size;
-
-  // 順列計算: P(available, wildcards)
-  let count = 1;
-  for(let i = 0; i < wildcardCount; i++){
-    count *= (availableDigits - i);
+export function binom(n, k){
+  if(k < 0 || k > n) return 0;
+  k = Math.min(k, n - k);
+  let res = 1;
+  for(let i = 1; i <= k; i++){
+    res = res * (n - (k - i)) / i;
   }
+  return Math.round(res);
 }
 ```
 
-**特徴**:
-- ワイルドカード数を数えるだけでなく、すでに使用された数字を除外
-- 重複なしの場合、利用可能な数字から順列を計算
+計算量:
 
-### 候補列挙（Full Enumeration）
+- 再帰版（`C(n,k) = C(n-1,k-1) + C(n-1,k)`）: 指数時間
+- 反復版（本実装）: `O(min(k, n-k))`
 
-候補数が一定数以下の場合、すべての組み合わせを実際に生成します。
+### 候補列挙
 
-**生成上限（モード別）**:
-- 許容集合モード: 5000通りまで生成
-- 必須包含モード: 3000通りまで生成
-- 部分特定モード: 500通りまで生成
-- **表示上限**: 1000件まで画面表示（それ以上はCSVエクスポートで取得可能）
+件数が上限以下の場合に辞書順で列挙します。上限は `ENUM_CAPS` で定義されており、
+allowed/must が 5,000、partial が 500 です。表示は 1,000 件まで、
+全件は CSV エクスポートで取得できます。
 
-**実装** (script.js:549-561, 594-606, 677):
+列挙の基本形は `generateCombinations(alphabet, n, cap)`:
+
 ```javascript
-function enumerateAllowed(digits, length, allowDup){
-  const result = [];
-
-  function backtrack(current){
-    if(current.length === length){
-      result.push(current);
-      return;
+export function generateCombinations(alphabet, n, cap){
+  if(n === 0) return [''];
+  if(Math.pow(alphabet.length, n) > cap) return null;
+  const out = [];
+  const buf = new Array(n);
+  function rec(i){
+    if(out.length > cap) return;
+    if(i === n){ out.push(buf.join('')); return; }
+    for(const d of alphabet){
+      buf[i] = d;
+      rec(i + 1);
+      if(out.length > cap) return;
     }
-    for(const d of digits){
-      if(!allowDup && current.includes(d)) continue;
-      backtrack(current + d);
-    }
   }
-
-  backtrack('');
-  return result;
+  rec(0);
+  return out;
 }
 ```
 
-**最適化**:
-- バックトラッキングによる再帰的生成
-- 重複チェックを `includes()` で効率的に実行
-- 結果を文字列として構築（配列操作より高速）
+- バックトラッキングによる深さ優先探索
+- 空間サイズが `cap` を超えると `null` を返して早期終了
+- 文字列結合は末尾の `buf.join('')` に集約（毎階層の `prefix + d` を避ける）
+
+`computeCandidates` 内の列挙では、固定桁をあらかじめ埋めた上で自由桁だけを回し、
+`predicate(buf)` で必須包含の条件を満たすものだけを採る、という形になっています。
+
+### ワイルドカードのパース
+
+```javascript
+export function parseWildcards(raw, pinLen){
+  if(raw == null) return null;
+  const s = String(raw).trim();
+  if(!s) return null;
+  const toks = s.split(',').map(t => t.trim());
+  if(toks.length !== pinLen) return null;
+  for(const t of toks){
+    if(t === '*') continue;
+    if(!/^[0-9]$/.test(t)) return null;
+  }
+  return toks;
+}
+```
+
+- カンマ区切りで要素数が `pinLen` 以外なら `null`
+- 各要素は `*` か 1 桁の数字でなければ `null`
+- 不正な場合は呼び出し側で「ワイルドカードなし」として扱う
 
 ---
 
@@ -173,94 +212,95 @@ function enumerateAllowed(digits, length, allowDup){
 
 ### 盗撮解析の信頼度計算
 
-**実装場所**: `script.js:925-963`
-
-### 信頼度計算式
-
-```javascript
+```
 confidence = 100 - anglePenalty - errorPenalty
 
-where:
-  anglePenalty = (angle === 'tilt') ? 30 : 0
-  errorPenalty = min(50, pixelErr × 1.5)
+anglePenalty = (angle === 'tilt') ? 30 : 0
+errorPenalty = min(50, pixelErr × 1.5)
 ```
+
+- 「真上」は基準値 100%（視点由来のペナルティなし）
+- 「斜め」は視点ペナルティ -30%
+- ピクセル誤差は 1px あたり 1.5% のペナルティ、上限 50%
 
 ### 検出数削減モデル
 
-**視点角度による削減**:
+視点角度が `tilt` のときは、`videoAccuracy(pixelErr) = max(0.5, 1 - pixelErr/50)` を使い、
+検出候補数を `ceil(count × accuracy)` に減らします。
+
 ```javascript
-if(videoAngle === 'tilt'){
-  const accuracy = Math.max(0.5, 1 - pixelErr/50);
-  const detectedCount = Math.ceil(candidates.length * accuracy);
-  candidates = candidates.slice(0, detectedCount);
+export function videoAccuracy(pixelErr){
+  const err = Math.max(0, Number(pixelErr) || 0);
+  return Math.max(0.5, 1 - err / 50);
 }
 ```
 
-**数学モデル**:
-```
-accuracy(err) = max(0.5, 1 - err/50)
+挙動の例:
 
-例:
-  err = 0px  → accuracy = 100%
-  err = 8px  → accuracy = 84%
-  err = 25px → accuracy = 50% (下限)
-  err = 50px → accuracy = 50% (下限)
+```
+videoAccuracy(0)   = 1.00
+videoAccuracy(8)   = 0.84
+videoAccuracy(15)  = 0.70
+videoAccuracy(25)  = 0.50（下限）
+videoAccuracy(50)  = 0.50
 ```
 
-**ピクセル誤差による削減**:
-```javascript
-if(pixelErr > 20){
-  candidates = candidates.slice(0, Math.max(1, Math.ceil(candidates.length / 2)));
-}
-```
+さらに `pixelErr > 20` のときは、角度に関係なく検出数を半減させます（`ceil(candidates.length / 2)`、
+最低 1 個は残す）。これは「ある程度以上の誤差では、個々の押下位置の特定自体が困難になる」ことを
+反映した補正です。
 
 ### データ構造
 
-**新しいフォーマット** (script.js:960):
 ```javascript
 window._attackResults.video = {
   candidates: ['1', '2', '3', '4'],  // 検出された数字
-  confidence: 88                      // 信頼度 (0-100)
+  confidence: 88,                     // 信頼度 (0-100)
 };
 ```
 
-### スコア計算への統合
+他の手法の結果も含めると以下のとおりです。
 
-**レーダーチャートスコア** (script.js:995):
+```javascript
+window._attackResults = {
+  finger: ['1', '2', '3'],                              // 配列（検出された数字）
+  thermal: {candidates: [...], orderConfidence: 85},    // オブジェクト（順序情報あり）
+  audio: 4,                                             // 数値（桁数のみ）
+  video: {candidates: [...], confidence: 88},           // オブジェクト（検出数字と信頼度）
+};
+```
+
+### レーダーチャートスコアへの統合
+
 ```javascript
 video: results.video
-  ? Math.min(100, results.video.candidates.length × 15 + results.video.confidence × 0.5)
+  ? Math.min(100, results.video.candidates.length * 15 + results.video.confidence * 0.5)
   : 0
 ```
 
-**スコア計算の意図**:
-- 検出数が主要因子（15倍の重み）
-- 信頼度は補助的要素（0.5倍の重み）
-- 4桁全検出 + 信頼度100% = 110点 → 100点（上限クランプ）
+- 検出数が主要因子（1 桁あたり +15 pt）
+- 信頼度は補助的要素（×0.5 の重み）
+- 4 桁全検出 + 信頼度 100% の場合、`4×15 + 100×0.5 = 110` → 100（上限クランプ）
 
 ---
 
 ## レーダーチャート描画 - High DPI対応
 
-### 実装場所
-
-`script.js:114-223`
-
 ### High DPIキャンバス初期化
 
-**問題**: Retina/4Kディスプレイでキャンバスがぼやける
+Retina / 4K ディスプレイでキャンバスの文字がぼやけないよう、`devicePixelRatio` を掛けた
+実ピクセルサイズをキャンバスの `width` / `height` に設定し、描画コンテキスト側で
+`scale(dpr, dpr)` を一度だけ呼びます。
 
-**解決策** (script.js:119-130):
 ```javascript
 function setupHighDPICanvas(canvas){
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
 
-  // CSS表示サイズ
+  // CSS 上の表示サイズ
   const displayWidth = rect.width;
   const displayHeight = rect.height;
 
-  // 実際のピクセルサイズ（DPR倍）
+  // 実ピクセルサイズ（DPR 倍）
   canvas.width = displayWidth * dpr;
   canvas.height = displayHeight * dpr;
 
@@ -268,75 +308,84 @@ function setupHighDPICanvas(canvas){
 }
 ```
 
-**コンテキストのスケーリング** (script.js:141-142):
 ```javascript
 radarCtx = radarCanvas.getContext('2d');
 radarCtx.scale(radarDims.dpr, radarDims.dpr);
 ```
 
-**描画時の座標系**:
-- 描画コードはCSS座標系（displayWidth/Height）を使用
-- 内部的にDPR倍されるため、高解像度ディスプレイで鮮明に表示
+これにより、描画コードは CSS 座標系（`displayWidth` / `displayHeight`）のまま書けて、
+内部的に DPR 倍されるため、高解像度ディスプレイで鮮明に表示されます。
 
 ### レーダーチャート幾何学
 
-**4軸レーダーチャート** (script.js:169-171):
+4 軸（指紋・熱・音響・盗撮）の値を上向きを 0 度として極座標 → デカルト座標に変換して描きます。
+
 ```javascript
 const labels = ['指紋', '熱', '音響', '盗撮'];
 const values = [scores.finger, scores.thermal, scores.audio, scores.video];
-const angles = [0, Math.PI/2, Math.PI, Math.PI*3/2];
+const angles = [0, Math.PI / 2, Math.PI, Math.PI * 3 / 2];
 ```
 
-**座標変換** (script.js:180-181, 198-201):
+座標変換:
+
 ```javascript
-// 角度を上向き基準に変換（数学的な0度は右向き）
-const angle = angles[i] - Math.PI/2;
+// 数学的な 0 度は右向き。上向きを基準にするため -π/2 する
+const angle = angles[i] - Math.PI / 2;
 
 // 極座標 → デカルト座標
 const x = cx + Math.cos(angle) * radius * score;
 const y = cy + Math.sin(angle) * radius * score;
 ```
 
-**描画順序**（奥から手前へ）:
-1. 背景の同心円（5段階）
-2. 軸線（4本）
-3. ラベルテキスト
-4. データポリゴン（塗り）
+### 描画順序
+
+奥から手前へ、次の順で描きます。
+
+1. 背景の同心円（5 段階、スコア 20・40・60・80・100 の目盛り）
+2. 軸線（4 本）
+3. ラベルテキスト（軸の外側）
+4. データポリゴン（半透明塗り）
 5. データポリゴン（枠線）
-6. データポイント（円）
+6. データポイント（頂点の円）
+
+### prefers-reduced-motion への配慮
+
+`style.css` 側で `@media (prefers-reduced-motion: reduce)` を定義し、
+アニメーションを縮約する環境ではチャートのトランジションも最小化します。
 
 ---
 
 ## 熱解析 - 指数減衰シミュレーション
 
-### 実装場所
-
-`script.js:272-361`
-
 ### 物理モデル
 
-**温度減衰式**:
 ```
 T(t) = T₀ × e^(-t/τ)
 
-where:
-  T₀: 初期温度
-  t:  経過時間（秒）
-  τ:  時定数（decay constant = 20秒）
+T₀: 初期温度
+t : 経過時間（秒）
+τ : 時定数（既定 20 秒）
 ```
 
-**実装** (script.js:344-348):
+実装は `pin-engine.js:thermalDecay(initial, elapsed, tau = 20)`。純関数で、
+副作用もタイマー状態も持ちません。
+
 ```javascript
-const dec = 20; // decay constant in seconds
-baseTemps.forEach((t, i) => {
-  const decayedTemp = t * Math.exp(-elapsed / dec);
-  temps[i] = Math.max(0, decayedTemp);
-});
+export function thermalDecay(initial, elapsed, tau = 20){
+  const t0 = Math.max(0, Number(initial) || 0);
+  const t = Math.max(0, Number(elapsed) || 0);
+  return Math.max(0, t0 * Math.exp(-t / tau));
+}
 ```
 
-### リアルタイム減衰
+### 画面側の簡易減衰
 
-**自動更新メカニズム** (script.js:278-290):
+画面側（`script.js`）では 1 秒ごとに描画を更新する簡易版（1 ℃／秒の線形減衰）を使い、
+解析ボタンで減衰を停止して、その時点の温度で順序を推定します。
+視覚的なわかりやすさと、物理モデルの純粋さを分けている構成です。
+
+### リアルタイム減衰のタイマー制御
+
 ```javascript
 function startThermalDecay(){
   if(thermalDecayInterval) clearInterval(thermalDecayInterval);
@@ -349,130 +398,138 @@ function startThermalDecay(){
       clearInterval(thermalDecayInterval);
       return;
     }
-    el('thermal-slider').value = elapsed;
-    el('thermal-time').textContent = Math.floor(elapsed);
-    drawThermal();
-  }, 100); // 100msごとに更新
+    // スライダー・テキスト・キャンバスを更新
+  }, 100);
 }
 ```
 
-**工夫点**:
-- `Date.now()` で実時間を計測（タイマーの累積誤差を防ぐ）
-- 60秒で自動停止
-- 100ms間隔で滑らかなアニメーション
+- `Date.now()` で実時間を計測し、タイマーの累積誤差を回避
+- 60 秒経過で自動停止（教材として長時間放置する意味がないため）
+- 100ms 間隔で滑らかなアニメーション
 
 ### カラーマッピング
 
-**温度→色変換** (script.js:330-333):
+温度を HSL の Hue に線形マッピングして色付けします。
+
 ```javascript
-const ratio = temp / 40; // 0-40度を0-1に正規化
-const hue = (1 - ratio) * 240; // 240(青) → 0(赤)
+const ratio = Math.min(1, temp / 40); // 0〜40℃ を 0〜1 に正規化
+const hue = (1 - ratio) * 240;         // 240°（青） → 0°（赤）
 ctx.fillStyle = `hsl(${hue}, 80%, 50%)`;
 ```
 
-**HSLカラーモデルの利用**:
-- Hue 240° = 青（冷たい）
-- Hue 0° = 赤（熱い）
-- 線形補間で滑らかなグラデーション
+- 低温（0℃）: Hue 240° = 青
+- 高温（40℃）: Hue 0° = 赤
+- 中間はなめらかな青→緑→黄→赤の遷移
+
+HSL を使うことで、1 本の `fillStyle` 代入で意味のある補間が得られます。
+RGB で同じことをするには中間色のテーブルが必要で、保守性で劣ります。
 
 ---
 
 ## 音響解析 - ピーク検出アルゴリズム
 
-### 実装場所
+### 二重閾値クロッシング
 
-`script.js:869-910`
-
-### AudioContext処理
-
-**音声ファイルのデコード** (script.js:878-882):
 ```javascript
-const arrayBuffer = await file.arrayBuffer();
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-const rawData = audioBuffer.getChannelData(0); // モノラル化
-```
-
-### ピーク検出アルゴリズム
-
-**閾値ベース検出** (script.js:884-903):
-```javascript
-function detectPeaks(data, threshold = 0.3){
-  let peaks = 0;
-  let inPeak = false;
-
-  const stride = 200; // サンプリング間隔（パフォーマンス最適化）
-
+export function countPeaks(data, {rise = 0.3, fall = 0.1, stride = 200} = {}){
+  if(!data || typeof data.length !== 'number' || data.length === 0) return 0;
+  let peaks = 0, inPeak = false;
   for(let i = 0; i < data.length; i += stride){
-    const abs = Math.abs(data[i]);
-
-    if(abs > threshold && !inPeak){
-      peaks++;
-      inPeak = true;
-    } else if(abs <= threshold){
-      inPeak = false;
-    }
+    const v = Math.abs(data[i]);
+    if(!inPeak && v > rise){ peaks++; inPeak = true; }
+    else if(inPeak && v < fall){ inPeak = false; }
   }
-
   return peaks;
 }
 ```
 
-**アルゴリズムの特徴**:
-1. **閾値クロッシング検出**: 振幅が閾値を超えた瞬間をピークとしてカウント
-2. **ピーク状態管理**: `inPeak` フラグで連続するピークを1回だけカウント
-3. **ストライド最適化**: 200サンプルごとに評価（44.1kHz音源で約4.5msごと）
+- 立ち上がり閾値 `rise = 0.3`、立ち下がり閾値 `fall = 0.1`
+- `rise` を超えたらピーク発生、`fall` を下回ったらピーク終了
+- サンプリングステップ `stride = 200`（44.1 kHz 音源で約 4.5 ms ごと）
+- 入力は `Float32Array` などの配列ライク。空配列や `null` は 0 を返す
 
-**パフォーマンス比較**:
+### 単一閾値ではなく二重閾値を使う理由
+
+単一閾値（例: 0.3 のみ）だと、閾値付近を細かく上下する波形で 1 回の打鍵が
+複数回のピークとして数えられる「チャタリング」が起きます。
+二重閾値（ヒステリシス）にすると、
+
+- `0.3` を超えて「ピーク中」になる
+- `0.1` を下回ってはじめて「ピーク終了」になる
+
+という状態機械になり、1 回の打鍵は確実に 1 ピークとしてカウントされます。
+電子回路のシュミットトリガと同じ考え方です。
+
+### サンプリングステップの効果
+
 ```
-全サンプル処理: O(n)、n = 44100 × 秒数
-ストライド処理: O(n/200)、約220倍高速
+全サンプル処理:  O(n)、n = 44,100 × 秒数
+ストライド処理:  O(n / 200)、約 200 倍の高速化
 ```
 
-### 閾値の根拠
+打鍵音の立ち上がり・立ち下がりは数ミリ秒〜数十ミリ秒のオーダーなので、
+4.5 ms おきにサンプルすれば十分に捕捉できます。
+
+### 画面側の制約
 
 ```javascript
-threshold = 0.3  // 正規化された振幅（-1.0 ~ 1.0）
+const AUDIO_MAX_BYTES = 20 * 1024 * 1024; // 20MB cap for acoustic analysis
 ```
 
-- **0.3**: 一般的な打鍵音の平均振幅
-- 背景ノイズ（通常 < 0.1）を除外
-- 強い打鍵音（> 0.5）も確実に検出
+- ファイルサイズ上限 20 MB（超えたらエラー表示）
+- `AudioContext` は decode の成功・失敗どちらの経路でも `.close()` を呼び、
+  デコード済みバッファの解放を促す
+- `window.AudioContext || window.webkitAudioContext` のフォールバックで
+  古い Safari にも配慮
+
+### 閾値 0.3 / 0.1 の根拠
+
+- `rise = 0.3`: 一般的な打鍵音の立ち上がり振幅。背景ノイズ（通常 < 0.1）を除外しつつ、
+  強い打鍵音（> 0.5）も確実に拾う
+- `fall = 0.1`: 背景ノイズのレベル。ピーク終了をここで判定することで、
+  打鍵音の余韻を 1 ピークに閉じ込める
+
+これらの数値は `PEAK_DEFAULTS` としてエクスポートされており、
+`test/readme.test.js` は README と TECHNICAL.md がこの数値と一致していることを検査します。
 
 ---
 
 ## PINランキング - 複合スコアリング
 
-### 実装場所
-
-`script.js:1083-1141`
-
 ### 組み合わせ生成
 
-**バックトラッキングアルゴリズム** (script.js:1089-1099):
+バックトラッキングで候補を生成し、上限 100 に達したら即時終了します。
+`4^4 = 256` 通りのうち、辞書順の最初の 100 通りに制限する形です。
+
 ```javascript
-function generateCombinations(arr, len, prefix=''){
+const maxGenerate = 100;
+
+function generateCombinations(arr, len, prefix = ''){
   if(prefix.length === len){
     pins.push(prefix);
     return;
   }
-  if(pins.length >= maxGenerate) return; // 早期終了
+  if(pins.length >= maxGenerate) return;
 
   for(const d of arr){
     generateCombinations(arr, len, prefix + String(d));
     if(pins.length >= maxGenerate) break;
   }
 }
+
+generateCombinations(candidates, length);
 ```
 
-**計算量制御**:
-- `maxGenerate = 100`: 生成上限
-- 候補数が4個、桁数が4の場合: 4^4 = 256通り → 100通りに制限
-- 早期終了で不要な計算を回避
+計算量制御:
+
+- 候補数 4 個 × 桁数 4 の場合: 全列挙は 256 通り → 100 通りに制限
+- 候補数 10 個 × 桁数 4 の場合: 全列挙は 10,000 通り → 100 通りで打ち切り
+- 教材として表示する TOP10 を得るのに、256 通り全部を生成する必要はない
 
 ### 複合スコアリングモデル
 
-**スコア計算** (script.js:1104-1136):
+生成された各候補 PIN に対して、攻撃手法の結果と照らし合わせてスコアを付けます。
+
 ```javascript
 const scored = pins.map(pin => {
   let score = 0;
@@ -502,159 +559,200 @@ const scored = pins.map(pin => {
   }
 
   // 4. 共通パターンのペナルティ
-  if(/^(\d)\1+$/.test(pin)) score -= 20; // 同一数字: -20pt
-  if(pin === '1234' || pin === '0000') score -= 10; // よくあるPIN: -10pt
+  if(/^(\d)\1+$/.test(pin)) score -= 20;              // 同一数字: -20pt
+  if(pin === '1234' || pin === '0000') score -= 10;   // よくあるPIN: -10pt
 
   return {pin, score};
 });
 ```
 
-**スコアリングの重み付け根拠**:
-- **熱解析（15pt）**: 順序情報を持つため最高スコア
-- **盗撮解析（10pt）**: 視覚的確認のため高信頼
-- **指紋解析（8pt）**: 順序情報なし、やや低信頼
-- **パターンペナルティ（-10~-20pt）**: セキュリティ教育的観点
+スコアリングの重み付け根拠:
 
-**ソートと表示** (script.js:1139):
+| 要素 | 重み | 理由 |
+| --- | --- | --- |
+| 熱解析の順序一致（桁ごと） | +15 pt | 順序情報を持つため最高スコア |
+| 盗撮解析で検出された数字 | +10 pt / 桁 | 視覚的確認のため高信頼 |
+| 指紋解析で検出された数字 | +8 pt / 桁 | 順序情報なし、やや低信頼 |
+| すべて同じ数字（例 `1111`） | -20 pt | セキュリティ教育的観点のペナルティ |
+| `1234` / `0000` | -10 pt | 典型的な弱い PIN へのペナルティ |
+
+### ソートと表示
+
 ```javascript
 return scored.sort((a, b) => b.score - a.score).slice(0, 10);
 ```
+
+降順ソートして上位 10 件を返し、画面で表示します。
+同点のときの順序はソートの安定性にゆだねます（教材用途であり、
+厳密な順序が結論に影響する場面ではないため）。
 
 ---
 
 ## 手で隠すモード - 永続的マスキング
 
-### 実装場所
-
-`script.js:1222-1326`
-
 ### 状態管理
 
-**状態変数** (script.js:1222-1225):
 ```javascript
-let handCoverInput = [];          // 実際の入力内容
-let handCoverMode = false;        // モードのON/OFF状態
-let handCoverStartIndex = 0;      // マスキング開始位置
-let maskedIndices = new Set();    // 永続的にマスクされたインデックス
+let handCoverInput = [];       // 実際の入力配列
+let handCoverMode = false;     // モードの ON/OFF
+let handCoverStartIndex = 0;   // マスキング開始位置
+let maskedIndices = new Set(); // 永続的にマスクされたインデックス
 ```
+
+4 つの状態を分けている理由:
+
+- `handCoverInput`: ユーザが押した実際の値。表示とは分離
+- `handCoverMode`: 現在のモード状態
+- `handCoverStartIndex`: ON にした瞬間の桁数。それ以前の桁は保護対象外
+- `maskedIndices`: 一度マスクされた桁の集合。モードを OFF にしても保持
 
 ### 永続的マスキングロジック
 
-**表示更新関数** (script.js:1227-1268):
 ```javascript
 function updateHandCoverDisplay(showBriefly, digit){
   const displayEl = el('hand-cover-input');
 
   if(showBriefly && digit){
-    // モードON時: 一時的に見せてからマスク
+    // モード ON 時: 一時的に見せてからマスク
     const currentIndex = handCoverInput.length - 1;
 
     // 一時表示: マスク済み以外を表示
     let display = '';
     for(let i = 0; i < handCoverInput.length; i++){
-      if(maskedIndices.has(i)){
-        display += '*';
-      } else if(i === currentIndex){
-        display += digit; // 現在の桁だけ表示
-      } else {
-        display += handCoverInput[i];
-      }
+      if(maskedIndices.has(i)) display += '*';
+      else if(i === currentIndex) display += digit;
+      else display += handCoverInput[i];
     }
-    displayEl.textContent = display || '';
+    displayEl.textContent = display;
 
-    // 300ms後に永続マスク
+    // 300ms 後に永続マスク
     setTimeout(() => {
       maskedIndices.add(currentIndex);
-
-      // 再表示
-      let display = '';
+      let d = '';
       for(let i = 0; i < handCoverInput.length; i++){
-        if(maskedIndices.has(i)){
-          display += '*';
-        } else {
-          display += handCoverInput[i];
-        }
+        d += maskedIndices.has(i) ? '*' : handCoverInput[i];
       }
-      displayEl.textContent = display || '';
+      displayEl.textContent = d;
     }, 300);
   } else {
-    // モードOFF時: マスク済みはマスクのまま表示
+    // モード OFF 時: マスク済みはそのまま
     let display = '';
     for(let i = 0; i < handCoverInput.length; i++){
-      if(maskedIndices.has(i)){
-        display += '*';
-      } else {
-        display += handCoverInput[i];
-      }
+      display += maskedIndices.has(i) ? '*' : handCoverInput[i];
     }
-    displayEl.textContent = display || '';
+    displayEl.textContent = display;
   }
 }
 ```
 
 ### 動作フロー
 
-**シナリオ**: `1234` → モードON → `5` → モードOFF → `6`
+シナリオ: `1234` → モード ON → `5` → モード OFF → `6`
 
-1. **初期入力** (`1234`):
+1. 初期入力（`1234`）:
+
    ```javascript
    handCoverInput = ['1','2','3','4']
    maskedIndices = Set()
    display = "1234"
    ```
 
-2. **モードON**:
+2. モード ON:
+
    ```javascript
    handCoverMode = true
    handCoverStartIndex = 4
    // 表示は変わらない
    ```
 
-3. **5を入力**:
+3. `5` を入力:
+
    ```javascript
    handCoverInput = ['1','2','3','4','5']
 
    // 即座に表示
    display = "12345"
 
-   // 300ms後
+   // 300ms 後
    maskedIndices = Set(4)
    display = "1234*"
    ```
 
-4. **モードOFF**:
+4. モード OFF:
+
    ```javascript
    handCoverMode = false
    maskedIndices = Set(4)  // 変わらない
    display = "1234*"        // 変わらない
    ```
 
-5. **6を入力**:
+5. `6` を入力:
+
    ```javascript
    handCoverInput = ['1','2','3','4','5','6']
-   maskedIndices = Set(4)  // 5だけマスク
+   maskedIndices = Set(4)   // 5 だけマスク
    display = "1234*6"
    ```
 
-### Setデータ構造の利用理由
+### Set データ構造の利用理由
 
 ```javascript
 let maskedIndices = new Set();
 ```
 
-**利点**:
+利点:
+
 - `O(1)` での存在チェック: `maskedIndices.has(i)`
 - 重複を自動排除
-- `add()`, `clear()` の直感的なAPI
+- `add()`, `clear()` の直感的な API
 
-**配列との比較**:
+配列との比較:
+
 ```javascript
 // 配列の場合（非効率）
 if(maskedIndicesArray.includes(i))  // O(n)
 
-// Setの場合（効率的）
+// Set の場合（効率的）
 if(maskedIndices.has(i))           // O(1)
 ```
+
+PIN の桁数は現実的には 8 以下なので、`O(n)` でも実用上は困りません。
+ただし意図（「このインデックスは特別扱い」）が Set のほうが明快に表せるため採用しています。
+
+### クリアと初期化
+
+「クリア」ボタンでは、`handCoverInput` と `maskedIndices` の両方を空にし、
+`handCoverStartIndex` を 0 に戻します。モード自体はクリアでは変更しません。
+
+---
+
+## テストとCI
+
+- `npm test`（`node --test`、依存なし）
+- テスト構成:
+  - `test/engine.test.js`: 期待値 15 件 + 総当たり参照実装による多ケース照合
+  - `test/i18n.test.js`: `script.js` に日本語リテラル 0 件
+  - `test/html.test.js`: CSP meta、favicon、noscript、`type="module"`、
+    インラインハンドラー / style 属性なし、主要 id の実在
+  - `test/contrast.test.js`: ライト・ダーク両方で主要の文字 / 背景の組が WCAG AA 4.5:1 以上
+  - `test/format.test.js`: 行長と主要ファイルの行数下限
+  - `test/readme.test.js`: README の計算例・画像参照・YAML・禁止語、
+    各 H2 節の太字が 2 か所以下、箇条書き先頭の `- **` 禁止、
+    TECHNICAL.md の音響閾値（rise=0.3, fall=0.1）が `PEAK_DEFAULTS` と一致
+- CI: `.github/workflows/test.yml` が push と pull_request で Node 22 の `npm test` を実行
+
+### ローカル確認
+
+```bash
+npm test
+python -m http.server 8099    # file:// では module が動かないため HTTP で配信する
+```
+
+### 総当たり参照実装
+
+`test/engine.test.js` は、小さなサイズでは全列挙する素直な参照実装を別に用意して、
+`computeCandidates` の返す件数と候補集合を照合します。
+期待値 15 件は手計算で得たもので、参照実装とエンジンの両方がそれに一致することを確かめます。
 
 ---
 
@@ -662,24 +760,22 @@ if(maskedIndices.has(i))           // O(1)
 
 ### 1. イベント委譲
 
-**キーパッド実装** (script.js:227-260):
 ```javascript
 function createKeypad(containerId, onClickCallback){
   const container = el(containerId);
   const keys = [];
 
-  // 12個のボタンを一度に生成
   fingerKeys.forEach((label, i) => {
     const btn = document.createElement('div');
     btn.className = 'key';
     btn.textContent = label;
     btn.dataset.index = i;
-    btn._label = label;  // データを要素に直接格納
+    btn._label = label;
     keys.push(btn);
     container.appendChild(btn);
   });
 
-  // コンテナに1つのリスナーのみ
+  // コンテナに 1 つのリスナーのみ
   container.addEventListener('click', (e) => {
     const key = e.target.closest('.key');
     if(key && onClickCallback) onClickCallback(key);
@@ -689,126 +785,109 @@ function createKeypad(containerId, onClickCallback){
 }
 ```
 
-**利点**:
-- 12個のイベントリスナー → 1個に削減
+利点:
+
+- 12 個のキーに対してリスナーは 1 個のみ
 - メモリ使用量削減
-- 動的要素の追加/削除に柔軟
+- 動的に要素を追加・削除しても再登録不要
 
 ### 2. キャンバス再描画の最適化
 
-**サーマルキャンバス** (script.js:320-358):
 ```javascript
 function drawThermal(){
-  // 前提: 変更がない場合は呼び出されない
+  ctx.clearRect(0, 0, w, h);  // 全体を一度にクリア
 
-  ctx.clearRect(0, 0, w, h);  // 全体クリア（高速）
-
-  // ループ内で状態変更を最小化
+  // 塗り
   for(let i = 0; i < 12; i++){
     const row = Math.floor(i / 3);
     const col = i % 3;
-
-    // 座標計算
     const x = col * keyW;
     const y = row * keyH;
 
-    // 色計算（ループ外で定数化可能なものは事前計算）
     const ratio = temps[i] / 40;
     const hue = (1 - ratio) * 240;
 
-    // 描画
     ctx.fillStyle = `hsl(${hue}, 80%, 50%)`;
     ctx.fillRect(x, y, keyW, keyH);
   }
 
-  // 枠線は別ループ（fillStyleの変更回数を削減）
+  // 枠線は別ループ（fillStyle の変更回数を削減）
   ctx.strokeStyle = '#fff';
   // ...
 }
 ```
 
-**最適化ポイント**:
-- `clearRect()` で全体を一度にクリア（個別のクリアより高速）
-- スタイル変更を最小化
-- 座標計算をループ内で完結
+最適化ポイント:
 
-### 3. 計算結果のキャッシュ
+- `clearRect` で全体を一度にクリア（個別クリアより高速）
+- `fillStyle` / `strokeStyle` の切り替えを塗りと枠線で分離
+- 座標計算はループ内で完結（事前テーブル不要）
 
-**二項係数の計算** (script.js:622-638):
+### 3. 計算の最適化（二項係数）
+
 ```javascript
-function binomial(n, k){
-  // 基本ケースの早期リターン
-  if(k > n) return 0;
-  if(k === 0 || k === n) return 1;
-
-  // 対称性を利用: C(n,k) = C(n,n-k)
-  k = Math.min(k, n - k);
-
-  // 反復計算（再帰より高速、スタックオーバーフローなし）
-  let result = 1;
-  for(let i = 0; i < k; i++){
-    result *= (n - i);
-    result /= (i + 1);
-    result = Math.round(result);
+export function binom(n, k){
+  if(k < 0 || k > n) return 0;
+  k = Math.min(k, n - k);   // 対称性で反復回数を半減
+  let res = 1;
+  for(let i = 1; i <= k; i++){
+    res = res * (n - (k - i)) / i;
   }
-  return result;
+  return Math.round(res);
 }
 ```
 
-**計算量**:
-- 再帰版: `O(2^min(k, n-k))` (指数時間)
-- 反復版: `O(min(k, n-k))` (線形時間)
+計算量:
 
-### 4. DOM操作のバッチ化
+- 再帰版 `C(n,k) = C(n-1,k-1) + C(n-1,k)`: `O(2^min(k, n-k))`
+- 反復版（本実装）: `O(min(k, n-k))`
 
-**計算ステップ表示** (script.js:778-786):
+### 4. DOM 操作のバッチ化
+
+計算ステップの表示は、1 行ごとに `textContent +=` するのではなく、
+各行を `createElement('div')` で作ってから `appendChild` することで
+リフロー回数を減らします。より大規模な出力なら `DocumentFragment` の採用が
+さらに有効です。
+
 ```javascript
-// 悪い例（1行ごとにDOM変更）
-steps.forEach(step => {
-  stepsEl.textContent += step + '\n';  // 毎回リフロー
-});
-
-// 良い例（一度にまとめて追加）
 stepsEl.innerHTML = '';
 steps.forEach((step, idx) => {
   const line = document.createElement('div');
-  line.style.marginBottom = '6px';
+  line.className = 'step-line';
   line.textContent = `${idx + 1}. ${step}`;
-  stepsEl.appendChild(line);  // DocumentFragmentを使うとさらに高速化可能
+  stepsEl.appendChild(line);
 });
 ```
 
-### 5. 遅延評価（Lazy Evaluation）
+### 5. 遅延評価と候補列挙の制限
 
-**候補列挙の制限** (script.js:549-561):
 ```javascript
-function enumerateAllowed(digits, length, allowDup){
-  const result = [];
-  const maxResults = 5000;  // 上限設定（許容集合モード）
-
-  function backtrack(current){
-    if(result.length >= maxResults) return;  // 早期終了
-
-    if(current.length === length){
-      result.push(current);
-      return;
-    }
-
-    for(const d of digits){
-      if(!allowDup && current.includes(d)) continue;
-      backtrack(current + d);
-    }
-  }
-
-  backtrack('');
-  return result;
+export function generateCombinations(alphabet, n, cap){
+  if(Math.pow(alphabet.length, n) > cap) return null;
+  // ...（上限超過なら null を返して呼び出し側が count のみを表示）
 }
 ```
 
-**効果**:
-- 10^10 = 10,000,000,000通りの生成を回避
-- モード別上限（500～5000通り）で停止 → 99.95～99.9999%の計算を削減
-- 表示は1000件まで（それ以上はCSVエクスポート）
+- `10^10 = 10,000,000,000` 通りの全列挙を回避
+- モード別上限（allowed/must = 5000、partial = 500）で停止
+- 表示は 1,000 件まで、それ以上は CSV エクスポート
+
+### 6. AudioContext のライフサイクル管理
+
+音声ファイルを decode したあとは `AudioContext.close()` を呼び、
+デコード済みバッファとオーディオスレッドを解放します。
+`try` / `catch` / `finally` で、エラー経路でも `close` が呼ばれるようにします。
+
+```javascript
+const ctx = new (window.AudioContext || window.webkitAudioContext)();
+try {
+  const buffer = await ctx.decodeAudioData(arrayBuffer);
+  const peaks = countPeaks(buffer.getChannelData(0));
+  // ...
+} finally {
+  if(ctx.state !== 'closed') ctx.close();
+}
+```
 
 ---
 
@@ -816,35 +895,62 @@ function enumerateAllowed(digits, length, allowDup){
 
 ### 1. データ構造の一貫性
 
-攻撃結果の構造を統一:
+攻撃結果の構造を統一します。手法によって「配列」「オブジェクト」「数値」と形が違うのは
+意味のある区別（指紋は数字集合、熱は順序付き、音響は桁数のみ、盗撮は数字＋信頼度）です。
+
 ```javascript
 window._attackResults = {
-  finger: ['1', '2', '3'],                    // 配列
-  thermal: {candidates: [...], orderConfidence: 85},  // オブジェクト
-  audio: 4,                                    // 数値
-  video: {candidates: [...], confidence: 88}   // オブジェクト
+  finger: ['1', '2', '3'],                             // 配列
+  thermal: {candidates: [...], orderConfidence: 85},   // オブジェクト
+  audio: 4,                                            // 数値
+  video: {candidates: [...], confidence: 88},          // オブジェクト
 };
 ```
 
-### 2. デバッグログの活用
-
-本番環境でもデバッグログを残す理由:
-- ユーザーからの問題報告時に詳細情報を取得可能
-- 教育ツールのため、動作原理の理解を促進
-- `console.log()` は本番環境でのパフォーマンス影響が微小
-
-### 3. 浮動小数点演算の注意
+### 2. 浮動小数点演算の注意
 
 ```javascript
-// 悪い例
-const result = (n * k) / m;  // 中間結果がオーバーフローの可能性
+// 悪い例: 中間結果でオーバーフローや丸め誤差が生じやすい
+const result = (n * k) / m;
 
-// 良い例
+// 良い例: 乗除を分けて逐次正規化
 let result = n;
 result *= k;
 result /= m;
-result = Math.round(result);  // 丸め誤差を補正
+result = Math.round(result);
 ```
+
+二項係数の反復式は、乗算と除算を交互に行うことで中間値を小さく保ちます。
+`Math.round` は最後に 1 度だけ呼べば、浮動小数点誤差を整数に丸められます。
+
+### 3. CSP への配慮
+
+`index.html` の CSP meta は `default-src 'self'; script-src 'self'; style-src 'self'; ...` と
+厳しく設定されています。新しい機能を追加するときは、
+
+- インラインスクリプトを書かない（`onclick=` などの属性ハンドラーも禁止）
+- インラインスタイル属性を書かない（`style="..."` を属性に書かない。クラスで切り替える）
+- 外部 CDN から読み込まない（CSS もスクリプトも、画像もフォントも）
+
+を守ってください。`test/html.test.js` がこれらを検査します。
+
+### 4. 文言の集中管理
+
+画面に出る日本語の文言は `pts-messages.js` に集めます。`script.js` に日本語の
+文字列リテラルを直接書かないこと（`test/i18n.test.js` が検査します）。
+将来の多言語化のための前提でもあります。
+
+### 5. モジュール読み込みと `file://`
+
+`script.js` は `type="module"` で読み込まれるため、`file://` では動きません。
+開発時は `python -m http.server 8099` などで HTTP 配信してください。
+
+### 6. アクセシビリティ
+
+- `prefers-reduced-motion` を尊重し、アニメーションを縮約する
+- 文字コントラストは WCAG AA（4.5:1）以上
+- 入力欄のフォントサイズは 16px 以上（iOS のズーム抑止）
+- 320px 幅でも破綻しないレイアウト
 
 ---
 
@@ -852,18 +958,22 @@ result = Math.round(result);  // 丸め誤差を補正
 
 ### 1. 新しい攻撃手法の追加
 
-**追加手順**:
+追加手順:
+
 1. `window._attackResults` に新しいキーを追加
-2. UI（index.html）に解析カードを追加
-3. 解析ロジックを `script.js` に実装
+2. UI（`index.html`）に解析カードを追加
+3. 解析ロジックを `script.js` に実装（純粋ロジックは `pin-engine.js` へ）
 4. `simRun()` 内で結果を統合
 5. `generatePINRanking()` のスコアリングに追加
+6. 文言は `pts-messages.js` に辞書追加
+7. テスト: 期待値を `test/engine.test.js` に、文言を `test/i18n.test.js` に
 
-**例: 磁気センサー攻撃**:
+例: 磁気センサー攻撃（スマートフォンの地磁気センサーから指の動きを推定）
+
 ```javascript
 window._attackResults.magnetic = {
   candidates: ['2', '5', '8'],
-  confidence: 65
+  confidence: 65,
 };
 
 // スコアリング
@@ -875,39 +985,73 @@ if(results.magnetic && results.magnetic.candidates){
 }
 ```
 
-### 2. 機械学習モデルの統合
+### 2. 候補集合計算の高速化
 
-現在のスコアリングは手動の重み付けですが、機械学習で最適化可能:
+現在は最大 `n = 8` 桁、`|S| ≤ 10` を想定しており、
+`A^f` は最大でも `10^8 = 100,000,000` 通りです。
+`ENUM_CAPS` で早期打ち切りしているため実用上は十分ですが、
+より一般的な設定への拡張を見据えると、
+
+- 必須包含モードの包除原理をメモ化する
+- 列挙の順序を再定義して、固定桁の位置に依存した枝刈りを行う
+
+といった最適化余地があります。
+
+### 3. 多言語化
+
+`pts-messages.js` は現在 `ja` 辞書のみですが、`en` を追加できる構造にしています。
+`t(key, params)` の呼び出し側を書き直す必要はなく、辞書を増やすだけで切り替えられます。
 
 ```javascript
-// 仮想実装
-async function predictPIN(features){
-  const model = await tf.loadLayersModel('model.json');
-  const prediction = model.predict(tf.tensor2d([features]));
-  return prediction.dataSync();
-}
+export const messages = {
+  ja: { 'result.count': '{n} 通り', /* ... */ },
+  en: { 'result.count': '{n} patterns', /* ... */ },
+};
 ```
 
-### 3. Web Workers による並列化
+### 4. Web Workers による並列化
 
-大量のPIN候補生成を並列化:
+大量の候補列挙や音声デコードを UI スレッドから分離できます。
 
 ```javascript
 // メインスレッド
-const worker = new Worker('pin-generator-worker.js');
-worker.postMessage({candidates, length, maxGenerate: 1000});
+const worker = new Worker('audio-worker.js', {type: 'module'});
+worker.postMessage({arrayBuffer});
 worker.onmessage = (e) => {
-  const pins = e.data;
-  displayPINRanking(scorePins(pins));
+  const peaks = e.data;
+  renderResult(peaks);
 };
 
-// pin-generator-worker.js
-self.onmessage = (e) => {
-  const {candidates, length, maxGenerate} = e.data;
-  const pins = generateCombinations(candidates, length, maxGenerate);
-  self.postMessage(pins);
+// audio-worker.js
+import {countPeaks} from './pin-engine.js';
+self.onmessage = async (e) => {
+  const ctx = new AudioContext();
+  try {
+    const buf = await ctx.decodeAudioData(e.data.arrayBuffer);
+    self.postMessage(countPeaks(buf.getChannelData(0)));
+  } finally {
+    ctx.close();
+  }
 };
 ```
+
+### 5. 新しい計算モードの追加
+
+モードは 3 つに限りません。例として「禁止集合モード」（S に含まれる数字を使えない）
+などが考えられます。追加には:
+
+1. `pin-engine.js:computeCandidates` に新しい分岐
+2. `index.html` のモード選択セレクトに項目追加
+3. `pts-messages.js` に説明文を追加
+4. `test/engine.test.js` に期待値を追加
+
+### 6. 統計モデルの導入
+
+現在のスコアリングは手動の重み付けですが、実環境のデータから
+重みを学習することも考えられます。ただし本ツールの位置づけは
+教育用であり、学習済みモデルを導入すると「どういう根拠でこの重みか」
+が説明しにくくなります。導入する場合は、重みの由来とデータソースを
+TECHNICAL.md に明記するのが前提になります。
 
 ---
 
@@ -915,43 +1059,61 @@ self.onmessage = (e) => {
 
 ### 数学的背景
 
-1. **包除原理**: Inclusion-Exclusion Principle
-   - 用途: 必須数字を含むPIN数の計算
+1. 包除原理（Inclusion-Exclusion Principle）
+   - 用途: 必須包含モードの候補数計算
    - 参考: [Wikipedia - Inclusion-exclusion principle](https://en.wikipedia.org/wiki/Inclusion%E2%80%93exclusion_principle)
 
-2. **二項係数**: Binomial Coefficient
-   - 用途: 組み合わせ数の計算
+2. 二項係数（Binomial Coefficient）
+   - 用途: 包除原理の係数、組み合わせ数
    - 公式: `C(n,k) = n! / (k!(n-k)!)`
    - 参考: [Wikipedia - Binomial coefficient](https://en.wikipedia.org/wiki/Binomial_coefficient)
 
-3. **指数減衰**: Exponential Decay
-   - 用途: 熱の時間変化モデル
+3. 指数減衰（Exponential Decay）
+   - 用途: 熱解析の時間変化モデル
    - 公式: `T(t) = T₀ × e^(-t/τ)`
    - 参考: [Wikipedia - Exponential decay](https://en.wikipedia.org/wiki/Exponential_decay)
 
-### Web技術
+### Web 技術
 
-1. **Canvas API**: High DPI対応
+1. Canvas API: High DPI 対応
    - `devicePixelRatio` による高解像度描画
-   - 参考: [MDN - Canvas API](https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API)
+   - 参考: [MDN - Canvas API](https://developer.mozilla.org/ja/docs/Web/API/Canvas_API)
 
-2. **Web Audio API**: 音声解析
+2. Web Audio API: 音声解析
    - `AudioContext`, `decodeAudioData` による波形処理
-   - 参考: [MDN - Web Audio API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
+   - 参考: [MDN - Web Audio API](https://developer.mozilla.org/ja/docs/Web/API/Web_Audio_API)
 
-3. **Set データ構造**: 効率的な集合演算
-   - O(1) での存在チェック
-   - 参考: [MDN - Set](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Set)
+3. ES Modules
+   - `type="module"` で `pin-engine.js` と `pts-messages.js` を読み込む
+   - 参考: [MDN - JavaScript modules](https://developer.mozilla.org/ja/docs/Web/JavaScript/Guide/Modules)
+
+4. Set データ構造: 効率的な集合演算
+   - `O(1)` での存在チェック
+   - 参考: [MDN - Set](https://developer.mozilla.org/ja/docs/Web/JavaScript/Reference/Global_Objects/Set)
 
 ### アルゴリズム
 
-1. **バックトラッキング**: 組み合わせ生成
+1. バックトラッキング: 組み合わせ生成
    - 深さ優先探索による全列挙
    - 参考: [Wikipedia - Backtracking](https://en.wikipedia.org/wiki/Backtracking)
 
-2. **ピーク検出**: 信号処理
-   - 閾値ベース検出法
-   - 参考: [SciPy - find_peaks](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.find_peaks.html)
+2. ピーク検出: 信号処理（ヒステリシス付き閾値クロッシング）
+   - 二重閾値による chattering 回避
+   - 参考: [Wikipedia - Schmitt trigger](https://en.wikipedia.org/wiki/Schmitt_trigger)
+
+3. HSL カラーモデル: 温度マッピング
+   - 色相（Hue）を温度に線形対応
+   - 参考: [MDN - HSL colors](https://developer.mozilla.org/ja/docs/Web/CSS/color_value/hsl)
+
+### セキュリティ関連
+
+1. Content Security Policy (CSP)
+   - 本ツールは `default-src 'self'` を基本に、外部読み込みを一切許可しない
+   - 参考: [MDN - CSP](https://developer.mozilla.org/ja/docs/Web/HTTP/CSP)
+
+2. WCAG コントラスト基準
+   - 本ツールはライト／ダーク両方で 4.5:1 以上を満たす
+   - 参考: [W3C - WCAG 2.1 Contrast](https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html)
 
 ---
 
@@ -966,7 +1128,3 @@ ipusiron - [GitHub](https://github.com/ipusiron)
 ## プロジェクト
 
 **生成AIで作るセキュリティツール100** - Day088
-
----
-
-最終更新: 2025-10-03

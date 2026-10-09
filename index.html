@@ -11,8 +11,11 @@
   <meta name="keywords" content="PIN,セキュリティ,教育,シミュレーター,認証,サイバーセキュリティ" />
 
   <!-- Security Headers -->
-  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
-  <meta name="referrer" content="no-referrer-when-downgrade" />
+  <!-- X-Content-Type-Options cannot be set via <meta>; it is a response header only.
+       CSP via <meta http-equiv> works and is kept here. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; base-uri 'self'; form-action 'self'" />
+  <meta name="referrer" content="no-referrer" />
+  <link rel="icon" href="data:," />
 
   <!-- Educational Disclaimer -->
   <meta property="og:title" content="PIN Threat Simulator - 教育用" />
@@ -20,6 +23,9 @@
   <meta property="og:type" content="website" />
 </head>
 <body>
+  <noscript>
+    <p>このツールはJavaScriptを使用します。ブラウザーのJavaScriptを有効にしてください。</p>
+  </noscript>
   <header class="header">
     <div class="title">
       <h1>PIN Threat Simulator</h1>
@@ -167,15 +173,15 @@
                 <div class="tooltip">サーマルカメラで入力直後の温度変化を検出します。<br>押されたキーは温度が高く、時間とともに冷却します。</div>
               </div>
             </div>
-            <p style="color:var(--muted);font-size:12px;margin:8px 0">テンキーをクリックしてPINを入力 → 経過時間スライダーで温度減衰を確認</p>
+            <p class="helper-text">テンキーをクリックしてPINを入力 → 経過時間スライダーで温度減衰を確認</p>
             <div id="thermal-keypad" class="finger-grid"></div>
-            <div class="thermal-controls" style="margin-top:12px">
+            <div class="thermal-controls mt-12">
               <label for="time-since">経過時間 (s)</label>
               <input id="time-since" type="range" min="0" max="60" value="0" />
               <span id="time-since-value">0s</span>
             </div>
-            <canvas id="thermal-canvas" width="300" height="300" style="margin-top:12px;display:block"></canvas>
-            <div class="buttons" style="margin-top:12px">
+            <canvas id="thermal-canvas" width="300" height="300" class="thermal-canvas"></canvas>
+            <div class="buttons mt-12">
               <button id="analyze-thermal" class="primary">解析</button>
               <button id="clear-thermal">クリア</button>
             </div>
@@ -192,10 +198,10 @@
               </div>
             </div>
             <div id="audio-keypad" class="finger-grid"></div>
-            <div style="margin-top:12px;padding:10px;background:rgba(99,102,241,0.08);border-radius:8px;font-size:13px">
+            <div class="info-box mt-12">
               打鍵回数: <strong id="audio-tap-count">0</strong>
             </div>
-            <div class="form-row" style="margin-top:12px">
+            <div class="form-row mt-12">
               <div class="label-with-help">
                 <label>音声ファイル</label>
                 <div class="tooltip-wrapper">
@@ -222,10 +228,10 @@
               </div>
             </div>
             <div id="video-keypad" class="finger-grid"></div>
-            <div style="margin-top:12px;padding:10px;background:rgba(99,102,241,0.08);border-radius:8px;font-size:13px">
+            <div class="info-box mt-12">
               入力PIN: <strong id="video-pin-display">****</strong>
             </div>
-            <div class="form-row" style="margin-top:12px">
+            <div class="form-row mt-12">
               <div class="label-with-help">
                 <label>視点</label>
                 <div class="tooltip-wrapper">
@@ -260,38 +266,38 @@
         <div class="analysis-panel">
           <div class="card">
             <h3>📊 統合分析</h3>
-            <div class="buttons" style="margin-bottom:16px">
+            <div class="buttons mb-16">
               <button id="run-sim" class="primary">全手法を統合</button>
               <button id="export-sim">エクスポート</button>
               <button id="push-to-calc">PINパターン計算へ転送</button>
             </div>
 
             <!-- レーダーチャート -->
-            <div style="margin-bottom:20px">
-              <h4 style="font-size:14px;margin:0 0 12px;color:var(--muted)">攻撃手法の有効性</h4>
-              <div id="radar-chart-container" style="max-width:320px;width:100%;margin:0 auto">
-                <canvas id="radar-chart" width="320" height="320" style="width:100%;height:auto;display:block"></canvas>
+            <div class="panel-section">
+              <h4 class="subheading-pad">攻撃手法の有効性</h4>
+              <div id="radar-chart-container" class="radar-container">
+                <canvas id="radar-chart" width="320" height="320" class="full-canvas"></canvas>
               </div>
             </div>
 
             <!-- 専門家のヒント -->
-            <div style="margin-bottom:20px">
-              <h4 style="font-size:14px;margin:0 0 8px;color:var(--muted)">💡 専門家のヒント</h4>
-              <div id="expert-hints" class="result-box" style="min-height:80px;font-size:13px;line-height:1.7">
+            <div class="panel-section">
+              <h4 class="subheading">💡 専門家のヒント</h4>
+              <div id="expert-hints" class="result-box expert-box">
                 各攻撃手法を実行後、「全手法を統合」を押してください。
               </div>
             </div>
 
             <!-- PINパターンランキング -->
             <div>
-              <h4 style="font-size:14px;margin:0 0 8px;color:var(--muted)">🎯 推定PINランキング</h4>
+              <h4 class="subheading">🎯 推定PINランキング</h4>
               <div id="pin-ranking" class="pin-ranking">
                 解析実行後に表示されます
               </div>
             </div>
 
             <!-- 統合結果サマリー -->
-            <div style="margin-top:20px;padding:12px;background:rgba(99,102,241,0.08);border-radius:8px;border:1px solid var(--card-border)">
+            <div class="summary-box">
               <div class="result-row"><strong>候補集合:</strong> <span id="sim-candidates">—</span></div>
               <div class="result-row"><strong>推定桁数:</strong> <span id="sim-length">—</span></div>
               <div class="result-row"><strong>順序確度:</strong> <span id="sim-order-confidence">—</span></div>
@@ -343,36 +349,36 @@
 
         <div class="card">
           <h3>ランダムテンキーのデモ</h3>
-          <div style="max-width:260px;width:100%;margin:0 auto">
-            <canvas id="random-keypad" width="260" height="320" style="width:100%;height:auto;display:block"></canvas>
+          <div class="canvas-slim">
+            <canvas id="random-keypad" width="260" height="320" class="full-canvas"></canvas>
           </div>
-          <div class="buttons" style="margin-top:12px">
+          <div class="buttons mt-12">
             <button id="shuffle-keypad">シャッフル</button>
             <button id="reset-keypad">リセット</button>
           </div>
 
           <!-- 入力表示 -->
-          <div style="margin-top:16px;padding:12px;background:rgba(99,102,241,0.05);border-radius:8px;border:1px solid var(--card-border)">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-              <strong style="font-size:13px;color:var(--muted)">入力内容:</strong>
-              <button id="clear-hand-input" style="padding:4px 10px;font-size:12px;border-radius:6px;border:1px solid var(--card-border);background:rgba(99,102,241,0.1);color:var(--accent);cursor:pointer">クリア</button>
+          <div class="input-container">
+            <div class="row-between">
+              <strong class="row-label">入力内容:</strong>
+              <button id="clear-hand-input" class="clear-mini">クリア</button>
             </div>
-            <div id="hand-cover-input" style="font-family:'JetBrains Mono',monospace;font-size:16px;color:var(--accent);min-height:24px;letter-spacing:2px"></div>
+            <div id="hand-cover-input" class="pin-display"></div>
           </div>
 
           <!-- 手で隠すモード -->
-          <div style="margin-top:12px;padding:10px 12px;background:rgba(99,102,241,0.05);border-radius:8px;border:1px solid var(--card-border)">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <div class="cover-box">
+            <label class="inline-check">
               <input type="checkbox" id="hand-cover-mode" />
-              <span style="font-size:13px">✋ 手で隠すモード（入力後すぐマスク）</span>
+              <span class="cover-label">✋ 手で隠すモード（入力後すぐマスク）</span>
             </label>
           </div>
 
-          <small style="display:block;margin-top:8px">ランダム配置は盗撮・指紋攻撃への難易度を上げます。</small>
+          <small class="rand-note">ランダム配置は盗撮・指紋攻撃への難易度を上げます。</small>
         </div>
       </div>
 
-      <div class="card" style="margin-top:20px">
+      <div class="card mt-20">
         <h3>実運用チェックリスト</h3>
         <ul class="checklist">
           <li><input type="checkbox" disabled /> 入力時は手で押し隠す / 画面でテンキーを覆う</li>
@@ -389,6 +395,6 @@
       🔗 GitHubリポジトリはこちら（ <a href="https://github.com/ipusiron/pin-threat-simulator" target="_blank" rel="noopener">ipusiron/pin-threat-simulator</a> ）
     </div>
   </footer>
-  <script src="script.js"></script>
+  <script type="module" src="script.js"></script>
 </body>
 </html>
