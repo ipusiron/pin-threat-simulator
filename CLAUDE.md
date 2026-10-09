@@ -45,7 +45,7 @@ CI runs the same command on push and pull_request through `.github/workflows/tes
 - `script.js` - DOM wiring (event handlers, canvas drawing, state management)
 - `pin-engine.js` - Pure logic module: `computeCandidates`, `parseWildcards`, `binom`,
   `countPeaks`, `videoAccuracy`, `thermalDecay`, `generateCombinations`
-- `pts-messages.js` - Centralized message dictionary (Japanese for now, bilingual in later stage)
+- `pts-messages.js` - Centralized message dictionary (`ja` + `en`)
 - `style.css` - Styling and theming (dark/light mode)
 - `test/` - Node `--test` suites
 - `.github/workflows/test.yml` - CI pipeline
@@ -126,9 +126,26 @@ This tool is **strictly for educational use** in controlled environments (classr
 
 ### Adding or editing a message
 
-- Edit `pts-messages.js` to add a key under the `ja` dictionary
+- Edit `pts-messages.js` and add the key to BOTH the `ja` and `en` dictionaries
+  (the key-set parity is enforced by `test/i18n.test.js`; the English value must
+  contain zero Japanese characters)
 - Call `t('your.key', {params})` from `script.js`
 - Keep `script.js` free of Japanese string literals (enforced by `test/i18n.test.js`)
+- In `index.html`, use `data-i18n="key"` on the element whose text to translate,
+  and `data-i18n-attr="attr1 attr2"` plus (optionally) `data-i18n-<attr>="key"`
+  for attribute-only translation (e.g. `title`, `placeholder`, `aria-label`).
+  Every `data-i18n*` key must exist in the dictionary (enforced by `test/html.test.js`)
+
+### Bilingual UI
+
+- The active language is resolved in `script.js` in this order:
+  `?lang=ja|en` → `localStorage['lang']` → `navigator.language` (defaults to `en`
+  when not Japanese) → `ja`
+- `applyI18n()` walks the DOM and injects dictionary values; the language toggle
+  button simply calls `setLang(next)` and `applyI18n()`. Prior analysis results
+  are redrawn from cached state rather than being recomputed
+- When editing documentation, update `README.md` and `README.en.md` together —
+  the headings must line up one-for-one (enforced by `test/readme.test.js`)
 
 ## Related Documents
 

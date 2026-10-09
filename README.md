@@ -39,6 +39,8 @@ hub: true
 ---
 -->
 
+[English](README.en.md) · 日本語
+
 # PIN Threat Simulator - PIN認証攻撃シミュレーター
 
 ![GitHub Repo stars](https://img.shields.io/github/stars/ipusiron/pin-threat-simulator?style=social)
@@ -86,12 +88,20 @@ hub: true
 - 完全クライアントサイドで動作（データ送信なし）
 - 外部APIも依存パッケージもなし。GitHub Pagesの直下で配信
 - 計算エンジンは`pin-engine.js`に分離し、総当たりの参照実装によるテストで検証
+- 日英の画面切替（`?lang=ja|en`、localStorage、ブラウザー言語の順で決定）
 - ダーク／ライトテーマ、prefers-reduced-motion対応、WCAG AA 相当の文字コントラスト
 - MITライセンス
 
 ---
 
 ## 📖 使い方
+
+### 言語の切替
+
+- ヘッダーの「🌐 EN」「🌐 JA」ボタンで日本語と英語を切り替えます
+- URL に `?lang=ja` または `?lang=en` を付けると、その言語で開きます
+- 選択した言語は `localStorage` に保存され、次回アクセス時に復元されます
+- 初回アクセス時は、クエリー → `localStorage` → ブラウザー言語の順で判定します
 
 ### 1. PINパターン計算
 
@@ -180,7 +190,7 @@ hub: true
 原理: サーマルカメラで入力直後の温度差から押下順序を推定します。
 
 シミュレーション内容:
-- リアルタイムの温度減衰シミュレーション（線形減衰: 1度／秒）
+- リアルタイムの温度減衰シミュレーション（指数減衰、時定数 τ=20 秒）
 - テンキークリックで温度上昇（+10度、最大40度）
 - 時間経過スライダー（0〜60秒）が自動的に進行
 - 温度の高い順に押下順序を推定（確度表示付き）
@@ -188,12 +198,11 @@ hub: true
 数学モデル:
 
 ```
-温度(t) = max(0, 初期温度 - t)   (t: 経過秒数)
-減衰速度: 1度/秒
+T(t) = T₀ × exp(-t/τ)   (τ = 20秒)
 ```
 
-純粋な指数減衰モデルも `pin-engine.js` の `thermalDecay(T0, t, τ=20)` として用意しており、
-`T(t) = T₀ × exp(-t/τ)` を返します。
+画面側の減衰は `pin-engine.js` の `thermalDecay(T₀, t, τ=20)` を呼び出して描画し、
+計算と表示が同じ式で動きます。例として T₀=40℃ では t=20秒で約 14.72℃、t=60秒で約 1.99℃ まで下がります。
 
 実環境での検出手法:
 - FLIRなどのサーマルカメラ（解像度320×240以上推奨）
@@ -605,12 +614,12 @@ npm test
 
 テスト内容:
 
-- `test/engine.test.js`: 期待値15件と、総当たりの参照実装による多ケース照合
-- `test/i18n.test.js`: `script.js` に日本語文字列リテラルが残っていないこと
-- `test/html.test.js`: CSP meta、favicon、noscript、`type="module"`、主要id、インラインスタイル・ハンドラーなし
+- `test/engine.test.js`: 期待値15件と、総当たりの参照実装による多ケース照合（n≤5 の全照合と n=6 の小集合照合）
+- `test/i18n.test.js`: 辞書 ja／en のキー集合一致、英語に日本語0件、ja に空文字列なし、`script.js` に日本語リテラルなし
+- `test/html.test.js`: CSP meta、favicon、noscript、`type="module"`、全角句読点0、`data-i18n` キーが辞書にある、主要id の実在
 - `test/contrast.test.js`: ライト／ダーク両方で主要な文字／背景の組が WCAG AA 4.5:1 以上
 - `test/format.test.js`: 行長・主要ファイルの行数下限
-- `test/readme.test.js`: 本READMEの計算例、画像参照の実在、ディレクトリー構造の整合、禁止語チェック
+- `test/readme.test.js`: README／README.en.md の計算例、画像参照の実在、見出しの対応、ディレクトリー構造の整合、禁止語チェック
 
 CI は `.github/workflows/test.yml` が push と pull_request で Node 22 の `npm test` を実行します。
 
@@ -687,6 +696,10 @@ pin-threat-simulator/
 │   └── workflows/
 │       └── test.yml       # push/PR時にNode 22でnpm testを実行するCI
 ├── assets/
+│   ├── en/
+│   │   ├── screenshot.png     # 計算タブの英語版スクリーンショット
+│   │   ├── screenshot2.png    # 攻撃シミュレーションタブの英語版スクリーンショット
+│   │   └── screenshot3.png    # セキュリティ解説タブの英語版スクリーンショット
 │   ├── screenshot.png     # 計算タブのスクリーンショット
 │   ├── screenshot2.png    # 攻撃シミュレーションタブのスクリーンショット
 │   └── screenshot3.png    # セキュリティ解説タブのスクリーンショット
@@ -694,20 +707,21 @@ pin-threat-simulator/
 │   ├── contrast.test.js   # ライト/ダークの文字コントラスト（WCAG AA）検証
 │   ├── engine.test.js     # 計算エンジンの期待値＋総当たり参照実装による照合
 │   ├── format.test.js     # 行長・主要ファイルの行数下限の検証
-│   ├── html.test.js       # CSP/favicon/noscript/主要idなどのHTML検証
-│   ├── i18n.test.js       # script.jsに日本語リテラルが残っていないことを検証
-│   └── readme.test.js     # READMEの計算例・画像参照・禁止語の検証
+│   ├── html.test.js       # CSP/favicon/noscript/i18n/主要idなどのHTML検証
+│   ├── i18n.test.js       # 辞書の日英キー一致・英語に日本語0・script.js日本語0
+│   └── readme.test.js     # README/README.en.mdの計算例・画像参照・見出しの検証
 ├── .gitignore             # Git除外設定
 ├── .nojekyll              # GitHub Pages向けJekyllビルドの無効化
 ├── CLAUDE.md              # Claude Code向けの開発ガイダンス
 ├── LICENSE                # MITライセンス
-├── README.md              # このファイル
+├── README.md              # このファイル（日本語版）
+├── README.en.md           # 英語版README
 ├── SECURITY.md            # セキュリティポリシーとCSP
 ├── TECHNICAL.md           # 実装・アルゴリズムの技術ドキュメント
 ├── index.html             # メインHTML（3タブ構造のUI）
 ├── package.json           # npm testの定義（依存なし）
 ├── pin-engine.js          # 純粋な計算エンジン（モード別の候補計算など）
-├── pts-messages.js        # 画面に出す日本語文言の辞書
+├── pts-messages.js        # 画面に出す日英の文言辞書（ja／en）
 ├── script.js              # DOMと攻撃シミュレーションのロジック
 └── style.css              # スタイル・テーマ（ダーク/ライト、reduced-motion）
 ```

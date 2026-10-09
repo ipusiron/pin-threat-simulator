@@ -1,13 +1,15 @@
 // test/html.test.js
 // Static checks on index.html: CSP header, favicon, noscript, type=module,
 // absence of X-Content-Type-Options meta, no inline on* handlers / style
-// attributes, and presence of the primary element ids.
+// attributes, presence of the primary element ids, i18n coverage, and the
+// absence of full-width Japanese punctuation (which belongs in the dict).
 
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {dirname, join} from 'node:path';
+import DICT from '../pts-messages.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = dirname(here);
@@ -66,6 +68,36 @@ test('no inline on* handlers and no style attributes', () => {
   assert.deepEqual(styleAttrs, [], 'inline style attributes present');
 });
 
+test('index.html has no full-width Japanese punctuation (belongs in dict)', () => {
+  // Full-width parens, period, comma, bullet-dot, Japanese quotes.
+  const banned = /[（）、。「」『』・]/;
+  if(banned.test(html)){
+    const lines = html.split(/\r?\n/);
+    const hits = [];
+    lines.forEach((line, i) => {
+      if(banned.test(line)) hits.push(`line ${i + 1}: ${line.trim().slice(0, 100)}`);
+    });
+    assert.fail('full-width punctuation present in HTML:\n' + hits.slice(0, 10).join('\n'));
+  }
+});
+
+test('every data-i18n key resolves in the ja dictionary', () => {
+  const keys = [];
+  // data-i18n="..."
+  for(const m of html.matchAll(/\bdata-i18n=["']([^"']+)["']/g)){
+    keys.push(m[1]);
+  }
+  // data-i18n-<attr>="..." but NOT data-i18n-attr (meta attribute list)
+  for(const m of html.matchAll(/\bdata-i18n-([a-z-]+)=["']([^"']+)["']/g)){
+    if(m[1] === 'attr') continue; // meta: list of attributes to translate
+    keys.push(m[2]);
+  }
+  const unique = Array.from(new Set(keys));
+  const missing = unique.filter(k => !DICT.ja.hasOwnProperty(k));
+  assert.equal(missing.length, 0,
+    `data-i18n keys with no dictionary entry: ${missing.join(', ')}`);
+});
+
 test('primary element ids are present', () => {
   const ids = [
     'tab-calc','digit-pick','pin-length','mode','allow-dup','wildcards',
@@ -76,7 +108,7 @@ test('primary element ids are present', () => {
     'video-keypad','video-angle','pixel-error','analyze-video','run-sim',
     'radar-chart','expert-hints','pin-ranking','push-to-calc','tab-sec',
     'random-keypad','shuffle-keypad','hand-cover-mode','theme-toggle',
-    'download-json',
+    'download-json','lang-toggle',
   ];
   for(const id of ids){
     const re = new RegExp(`id=["']${id}["']`);

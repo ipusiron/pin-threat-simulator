@@ -7,9 +7,9 @@
 
 import {
   computeCandidates, parseWildcards,
-  countPeaks, videoAccuracy, PEAK_DEFAULTS,
+  countPeaks, videoAccuracy, PEAK_DEFAULTS, thermalDecay,
 } from './pin-engine.js';
-import {t, translateStep} from './pts-messages.js';
+import {t, translateStep, setLang, getLang} from './pts-messages.js';
 
 const AUDIO_MAX_BYTES = 20 * 1024 * 1024; // 20MB cap for acoustic analysis
 
@@ -42,11 +42,101 @@ function bootstrap(){
   }
 
   /* -----------------------
+     Language Management (JA / EN)
+     ----------------------- */
+  // Resolve initial language from ?lang=, then localStorage, then navigator.
+  function safeLocalGet(key){
+    try { return localStorage.getItem(key); } catch (_) { return null; }
+  }
+  function safeLocalSet(key, val){
+    try { localStorage.setItem(key, val); } catch (_) { /* ignore */ }
+  }
+  function resolveInitialLang(){
+    const qs = new URLSearchParams(window.location.search);
+    const q = qs.get('lang');
+    if(q === 'ja' || q === 'en') return q;
+    const saved = safeLocalGet('lang');
+    if(saved === 'ja' || saved === 'en') return saved;
+    const nav = (navigator.language || 'en').toLowerCase();
+    return nav.startsWith('ja') ? 'ja' : 'en';
+  }
+
+  // Apply the active language to every element that carries a data-i18n /
+  // data-i18n-attr marker. For attribute translation, data-i18n-attr lists
+  // the target attributes (space separated); the main data-i18n key applies
+  // to every listed attribute unless a data-i18n-<attr> override is set.
+  function applyI18n(){
+    document.documentElement.setAttribute('lang', getLang());
+    const nodes = document.querySelectorAll('[data-i18n]');
+    for(const node of nodes){
+      const key = node.getAttribute('data-i18n');
+      if(!key) continue;
+      const attrSpec = node.getAttribute('data-i18n-attr');
+      if(attrSpec){
+        // Attribute translation path (possibly plus text when data-i18n is
+        // present without data-i18n-text=false).
+        const attrs = attrSpec.split(/\s+/).filter(Boolean);
+        for(const a of attrs){
+          const overrideKey = node.getAttribute('data-i18n-' + a);
+          const target = overrideKey || key;
+          node.setAttribute(a, t(target));
+        }
+        // If data-i18n-attr is set, we only translate attributes by default
+        // UNLESS the author also wants the text to update. We treat the main
+        // data-i18n key as the attribute key, and skip the text update to
+        // avoid stomping on content like "🌐 EN" (toggle label).
+        if(node.hasAttribute('data-i18n-text')){
+          node.textContent = t(key);
+        }
+      } else {
+        node.textContent = t(key);
+      }
+    }
+    // Document title also follows ui.title.
+    document.title = t('ui.title');
+  }
+
+  // Public helpers reused by the language toggle and later re-renders.
+  function reapplyActive(){
+    applyI18n();
+    // Redraw the pieces that depend on dict values but are not plain text.
+    try {
+      if(window._lastSimScores){ drawRadarChart(window._lastSimScores); }
+    } catch (_) { /* radar not yet initialized */ }
+    // Re-render steps/candidates list from cached result if present.
+    if(window._calcResult){
+      const stepsEl = el('calculation-steps');
+      if(stepsEl && stepsEl.style.display !== 'none' && window._calcResult.steps){
+        stepsEl.innerHTML = '';
+        window._calcResult.steps.forEach((step, idx) => {
+          const line = document.createElement('div');
+          line.style.marginBottom = '6px';
+          line.textContent = `${idx + 1}. ${translateStep(step)}`;
+          stepsEl.appendChild(line);
+        });
+      }
+    }
+  }
+
+  setLang(resolveInitialLang());
+  applyI18n();
+
+  const langToggle = el('lang-toggle');
+  if(langToggle){
+    langToggle.addEventListener('click', () => {
+      const next = getLang() === 'ja' ? 'en' : 'ja';
+      setLang(next);
+      safeLocalSet('lang', next);
+      reapplyActive();
+    });
+  }
+
+  /* -----------------------
      Theme Management
      ----------------------- */
   // Dark/Light theme toggle with localStorage persistence
   const themeToggle = el('theme-toggle');
-  const currentTheme = localStorage.getItem('theme') || 'dark'; // Default: dark theme
+  const currentTheme = safeLocalGet('theme') || 'dark'; // Default: dark theme
   document.documentElement.setAttribute('data-theme', currentTheme);
   themeToggle.textContent = currentTheme === 'dark' ? '☀️' : '🌙'; // Icon shows opposite mode
 
@@ -54,7 +144,7 @@ function bootstrap(){
     const theme = document.documentElement.getAttribute('data-theme');
     const newTheme = theme === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('theme', newTheme); // Persist choice
+    safeLocalSet('theme', newTheme); // Persist choice
     themeToggle.textContent = newTheme === 'dark' ? '☀️' : '🌙';
 
     // Redraw random keypad canvas with new theme colors
@@ -307,14 +397,16 @@ function bootstrap(){
   /* -----------------------
      Thermal keypad (thermal analysis)
      ----------------------- */
-  // Real-time thermal decay simulation with linear cooling (1°C/second)
+  // Real-time thermal decay simulation driven by the exponential model in
+  // pin-engine.js: T(t) = T0 * exp(-t / tau), with tau = 20s. The UI calls
+  // `thermalDecay()` so the on-screen cooling curve matches the engine.
   let thermalDecayInterval = null; // Interval ID for automatic decay
   let thermalStartTime = null; // Timestamp when input started
 
   /**
    * Thermal keypad: Click to increase temperature
    * Temperature increases by 10°C per click, max 40°C
-   * Automatically starts real-time decay animation
+   * Automatically starts real-time decay animation (exponential, tau=20s)
    */
   const thermalKeypadKeys = createKeypad('thermal-keypad', (node)=>{
     // Add 10 degrees per click, max 40 degrees (realistic range)
@@ -322,7 +414,7 @@ function bootstrap(){
     baseTemps[parseInt(node.dataset.idx)] = node._temp;
     node.querySelector('.density').textContent = Math.round(node._temp);
 
-    // Reset time slider to 0 and start real-time decay (1 degree/second)
+    // Reset time slider to 0 and start real-time exponential decay (tau=20s)
     el('time-since').value = 0;
     el('time-since-value').textContent = '0s';
     thermalStartTime = Date.now();
@@ -344,7 +436,7 @@ function bootstrap(){
 
   /**
    * Start real-time thermal decay animation
-   * Temperature decreases by 1°C per second (linear cooling model)
+   * Uses the engine's exponential model: T(t) = T0 * exp(-t / tau), tau = 20s
    * Updates slider, keypad displays, and thermal canvas every second
    * Auto-stops after 60 seconds
    */
@@ -362,8 +454,8 @@ function bootstrap(){
       el('time-since').value = elapsed;
       el('time-since-value').textContent = elapsed + 's';
 
-      // Calculate decayed temperatures: linear decay at 1°C/second
-      const currentTemps = baseTemps.map(t => Math.max(0, t - elapsed));
+      // Exponential decay (tau=20s) via the pure engine function
+      const currentTemps = baseTemps.map(t => thermalDecay(t, elapsed));
 
       // Update temperature displays on keypad
       thermalKeypadKeys.forEach((node, i)=>{
@@ -471,8 +563,8 @@ function bootstrap(){
     // Stop automatic decay when user manually adjusts slider
     stopThermalDecay();
 
-    // Calculate decayed temps: 1 degree per second
-    const currentTemps = baseTemps.map(t => Math.max(0, t - s));
+    // Exponential decay (tau=20s) via the engine function
+    const currentTemps = baseTemps.map(t => thermalDecay(t, s));
 
     // Update keypad displays
     thermalKeypadKeys.forEach((node, i)=>{
@@ -693,7 +785,7 @@ function bootstrap(){
   /**
    * Thermal Analysis
    * Simulates thermal imaging detection of recently pressed keys
-   * Uses linear cooling model: temp(t) = max(0, initial_temp - t) at 1°C/second
+   * Uses the engine's exponential cooling model: T(t) = T0 * exp(-t / tau), tau=20s
    * Sorts keys by temperature to estimate digit order (higher temp = more recent)
    * Order confidence calculated as ratio of hottest to second-hottest key
    */
@@ -704,8 +796,8 @@ function bootstrap(){
     // Use current elapsed time
     const timeS = Number(el('time-since').value);
 
-    // Calculate current temperatures (1 degree per second decay)
-    const thermalTemps = baseTemps.map(t => Math.max(0, t - timeS));
+    // Current temperatures via the engine's exponential decay (tau=20s)
+    const thermalTemps = baseTemps.map(t => thermalDecay(t, timeS));
 
     const thermalPairs = thermalTemps.map((t,i)=>({i,t})).sort((a,b)=>b.t-a.t);
     const candidates = thermalPairs.filter(p=>p.t>3).slice(0,6).map(p=>fingerKeys[p.i].label).filter(lbl=>/\d/.test(lbl));
@@ -851,7 +943,8 @@ function bootstrap(){
       video: results.video ? Math.min(100, results.video.candidates.length * 15 + results.video.confidence * 0.5) : 0
     };
 
-    // Draw radar chart
+    // Draw radar chart (cache scores so language changes can re-render it)
+    window._lastSimScores = scores;
     drawRadarChart(scores);
 
     // Generate expert hints

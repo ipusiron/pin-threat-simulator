@@ -163,6 +163,38 @@ test('engine matches brute-force oracle across many cases', () => {
   assert.ok(caseCount >= 200, `only ${caseCount} oracle cases ran`);
 });
 
+// n=6 oracle sweep: keeps the brute-force search tractable by restricting the
+// candidate set to |S| = 3 or 4 and only exercising allowed / must (partial
+// stays at n <= 5). Wildcards: null and a single fixed digit.
+test('engine matches oracle at n=6 for small S (allowed/must only)', () => {
+  const SMALL_S = [[1,2,3], [1,2,3,4]];
+  const SMALL_MODES = ['allowed', 'must'];
+  let caseCount = 0;
+  for(const S of SMALL_S){
+    for(const mode of SMALL_MODES){
+      for(const allowDup of [true, false]){
+        const wildOptions = [null, Array.from({length:6}, (_, i) => (i === 2) ? String(S[0]) : '*')];
+        for(const wilds of wildOptions){
+          const input = {digits: S, pinLen: 6, mode, allowDup, wilds};
+          const expected = oracle(input);
+          const got = computeCandidates(input);
+          caseCount++;
+          assert.equal(got.count, expected.count,
+            `n=6 oracle count mismatch: S=${JSON.stringify(S)} ` +
+            `mode=${mode} dup=${allowDup} w=${JSON.stringify(wilds)}: ` +
+            `got ${got.count}, oracle ${expected.count}`);
+          if(got.candidates && got.candidates.length > 0){
+            assert.deepEqual(got.candidates, expected.candidates,
+              `n=6 oracle candidates mismatch: S=${JSON.stringify(S)} mode=${mode} dup=${allowDup} w=${JSON.stringify(wilds)}`);
+          }
+        }
+      }
+    }
+  }
+  globalThis.__oracleCases6 = caseCount;
+  assert.ok(caseCount >= 16, `only ${caseCount} n=6 oracle cases ran`);
+});
+
 // ---- binom ---------------------------------------------------------------
 test('binom covers edges and symmetry', () => {
   assert.equal(binom(0, 0), 1);

@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PIN Threat Simulator - PIN認証攻撃シミュレーター</title>
+  <title data-i18n="ui.title">PIN Threat Simulator</title>
   <link rel="stylesheet" href="style.css" />
-  <meta name="description" content="PIN認証の脆弱性を学ぶための教育用Webシミュレーター。指紋解析、熱解析、音響解析などの攻撃手法と防御策を安全に体験できます。" />
+  <meta name="description" data-i18n-attr="content" data-i18n="ui.metaDescription" content="PIN threat simulator." />
   <meta name="robots" content="index, follow" />
   <meta name="author" content="ipusiron" />
-  <meta name="keywords" content="PIN,セキュリティ,教育,シミュレーター,認証,サイバーセキュリティ" />
+  <meta name="keywords" content="PIN,security,education,simulator,authentication,cybersecurity" />
 
   <!-- Security Headers -->
   <!-- X-Content-Type-Options cannot be set via <meta>; it is a response header only.
@@ -18,41 +18,42 @@
   <link rel="icon" href="data:," />
 
   <!-- Educational Disclaimer -->
-  <meta property="og:title" content="PIN Threat Simulator - 教育用" />
-  <meta property="og:description" content="⚠️ 教育目的専用：PIN認証の脆弱性を安全に学習するためのシミュレーター" />
+  <meta property="og:title" data-i18n-attr="content" data-i18n="ui.ogTitle" content="PIN Threat Simulator - Educational" />
+  <meta property="og:description" data-i18n-attr="content" data-i18n="ui.ogDescription" content="Educational only." />
   <meta property="og:type" content="website" />
 </head>
 <body>
   <noscript>
-    <p>このツールはJavaScriptを使用します。ブラウザーのJavaScriptを有効にしてください。</p>
+    <p data-i18n="ui.noscript">This tool requires JavaScript. Please enable it in your browser.</p>
   </noscript>
   <header class="header">
     <div class="title">
-      <h1>PIN Threat Simulator</h1>
-      <p class="subtitle">PIN認証の攻撃手法と防御策を学ぶための教育用シミュレーター</p>
+      <h1 data-i18n="ui.appTitle">PIN Threat Simulator</h1>
+      <p class="subtitle" data-i18n="ui.appSubtitle">Educational simulator for PIN attack techniques and defenses.</p>
     </div>
     <div class="actions">
-      <button class="theme-toggle" id="theme-toggle" title="テーマ切り替え">🌙</button>
-      <button id="download-json" title="計算設定とシミュレーション結果を含む全セッションデータをJSONでエクスポート">セッションをエクスポート (JSON)</button>
+      <button class="lang-toggle" id="lang-toggle" data-i18n="ui.langToggleLabel" data-i18n-attr="aria-label title" aria-label="Switch language" title="Switch language (JA / EN)">🌐 EN</button>
+      <button class="theme-toggle" id="theme-toggle" data-i18n-attr="title" data-i18n="ui.themeToggleTitle" title="Toggle theme">🌙</button>
+      <button id="download-json" data-i18n="ui.exportSessionLabel" data-i18n-attr="title" data-i18n-title="ui.exportSessionTitle" title="Export session (JSON)">Export session (JSON)</button>
     </div>
   </header>
 
-  <nav class="tabs" role="tablist" aria-label="Main Tabs">
-    <button class="tab active" data-tab="calc" role="tab" aria-selected="true">PINパターン計算</button>
-    <button class="tab" data-tab="sim" role="tab" aria-selected="false">攻撃シミュレーション</button>
-    <button class="tab" data-tab="sec" role="tab" aria-selected="false">セキュリティ解説</button>
+  <nav class="tabs" role="tablist" data-i18n-attr="aria-label" data-i18n="ui.tabsAria" aria-label="Main Tabs">
+    <button class="tab active" data-tab="calc" role="tab" aria-selected="true" data-i18n="ui.tabCalc">PIN Pattern Calculation</button>
+    <button class="tab" data-tab="sim" role="tab" aria-selected="false" data-i18n="ui.tabSim">Attack Simulation</button>
+    <button class="tab" data-tab="sec" role="tab" aria-selected="false" data-i18n="ui.tabSec">Security</button>
   </nav>
 
   <main class="main">
-    <!-- TAB: PINパターン計算 -->
+    <!-- TAB: Calc -->
     <section id="tab-calc" class="tab-panel">
       <div class="panel two-col">
         <div class="card">
           <div class="label-with-help">
-            <label>候補数字集合 (click to toggle)</label>
+            <label data-i18n="ui.digitSetLabel">Candidate digit set</label>
             <div class="tooltip-wrapper">
               <span class="help-icon">?</span>
-              <div class="tooltip">攻撃で検出された可能性のある数字を選択します。<br>クリックで選択/解除を切り替えます。</div>
+              <div class="tooltip" data-i18n="ui.digitSetTooltip">Pick digits that may have been detected.</div>
             </div>
           </div>
           <div id="digit-pick" class="digit-pick">
@@ -61,10 +62,10 @@
 
           <div class="form-row">
             <div class="label-with-help">
-              <label for="pin-length">PIN桁数</label>
+              <label for="pin-length" data-i18n="ui.pinLengthLabel">PIN length</label>
               <div class="tooltip-wrapper">
                 <span class="help-icon">?</span>
-                <div class="tooltip">PINコードの桁数を指定します。<br>音響解析などで桁数が推定できている場合に設定します。</div>
+                <div class="tooltip" data-i18n="ui.pinLengthTooltip">Set the PIN length.</div>
               </div>
             </div>
             <input id="pin-length" type="number" min="1" max="8" value="4" />
@@ -72,65 +73,61 @@
 
           <div class="form-row">
             <div class="label-with-help">
-              <label>モード</label>
+              <label data-i18n="ui.modeLabel">Mode</label>
               <div class="tooltip-wrapper">
                 <span class="help-icon">?</span>
-                <div class="tooltip">
-                  <strong>許容集合:</strong> 選択した数字のみ使用可能<br>
-                  <strong>必須包含:</strong> 選択した数字をすべて含む<br>
-                  <strong>部分特定:</strong> 選択した数字が可能性あり（0-9すべて許容）
-                </div>
+                <div class="tooltip" data-i18n="ui.modeTooltip">Mode options.</div>
               </div>
             </div>
             <select id="mode">
-              <option value="allowed">許容集合モード（候補集合以外不可）</option>
-              <option value="must">必須包含モード（候補集合をすべて含む）</option>
-              <option value="partial">部分特定モード（候補集合は可能性あり）</option>
+              <option value="allowed" data-i18n="ui.modeAllowed">Allowed-set mode</option>
+              <option value="must" data-i18n="ui.modeMust">Must-include mode</option>
+              <option value="partial" data-i18n="ui.modePartial">Partial mode</option>
             </select>
           </div>
 
           <div class="form-row">
             <div class="label-with-help">
-              <label><input type="checkbox" id="allow-dup" checked /> 重複を許可</label>
+              <label><input type="checkbox" id="allow-dup" checked /> <span data-i18n="ui.allowDupLabel">Allow duplicates</span></label>
               <div class="tooltip-wrapper">
                 <span class="help-icon">?</span>
-                <div class="tooltip">同じ数字を複数回使用できるかを設定します。例：1111や1234など。</div>
+                <div class="tooltip" data-i18n="ui.allowDupTooltip">Allow repeating digits.</div>
               </div>
             </div>
           </div>
 
           <div class="form-row">
             <div class="label-with-help">
-              <label for="wildcards">ワイルドカード桁</label>
+              <label for="wildcards" data-i18n="ui.wildcardsLabel">Wildcards</label>
               <div class="tooltip-wrapper">
                 <span class="help-icon">?</span>
-                <div class="tooltip">特定の位置の数字が分かっている場合に使用します。<br>カンマ区切りで指定し、不明な桁は「*」を使います。<br>例：*,*,2,* は3桁目が2で他は不明</div>
+                <div class="tooltip" data-i18n="ui.wildcardsTooltip">Comma-separated wildcard pattern.</div>
               </div>
             </div>
-            <input id="wildcards" type="text" placeholder="例: *,*,2,*" />
+            <input id="wildcards" type="text" data-i18n-attr="placeholder" data-i18n="ui.wildcardsPlaceholder" placeholder="e.g. *,*,2,*" />
           </div>
 
           <div class="buttons">
-            <button id="calc-btn" class="primary">計算する</button>
-            <button id="clear-calc">クリア</button>
-            <button id="use-from-sim">攻撃シミュレーション結果を使う</button>
+            <button id="calc-btn" class="primary" data-i18n="ui.calcBtn">Calculate</button>
+            <button id="clear-calc" data-i18n="ui.clearBtn">Clear</button>
+            <button id="use-from-sim" data-i18n="ui.useFromSim">Use the attack-simulation result</button>
           </div>
         </div>
 
         <div class="card">
-          <h3>結果</h3>
-          <div class="result-row"><strong>候補総数:</strong> <span id="result-count">—</span></div>
-          <div class="result-row"><strong>推定桁数:</strong> <span id="result-length">—</span></div>
+          <h3 data-i18n="ui.resultHeading">Result</h3>
+          <div class="result-row"><strong data-i18n="ui.resultTotalLabel">Total candidates:</strong> <span id="result-count">—</span></div>
+          <div class="result-row"><strong data-i18n="ui.resultLengthLabel">Estimated length:</strong> <span id="result-length">—</span></div>
           <div class="form-row">
-            <label><input type="checkbox" id="show-steps" /> 計算過程を表示（教育用）</label>
+            <label><input type="checkbox" id="show-steps" /> <span data-i18n="ui.showStepsLabel">Show calculation steps (educational)</span></label>
           </div>
           <div id="calculation-steps" class="steps"></div>
 
-          <!-- 候補一覧フレーム -->
+          <!-- Candidate list frame -->
           <div class="candidates-frame">
             <div class="candidates-header">
-              <h4>候補一覧</h4>
-              <button id="download-csv" class="csv-export-btn" title="候補一覧をCSVでエクスポート">CSV</button>
+              <h4 data-i18n="ui.candidatesHeading">Candidate list</h4>
+              <button id="download-csv" class="csv-export-btn" data-i18n-attr="title" data-i18n="ui.csvBtnTitle" title="Export the candidate list as CSV">CSV</button>
             </div>
             <div id="candidates" class="candidates"></div>
           </div>
@@ -138,253 +135,253 @@
       </div>
     </section>
 
-    <!-- TAB: 攻撃シミュレーション -->
+    <!-- TAB: Attack simulation -->
     <section id="tab-sim" class="tab-panel hidden">
       <div class="sim-layout">
-        <!-- 左側：各攻撃手法 -->
+        <!-- Left: each attack method -->
         <div class="attack-methods">
-          <!-- 指紋解析 -->
+          <!-- Fingerprint -->
           <div class="card attack-card">
             <div class="label-with-help">
-              <h3>🔍 指紋解析</h3>
+              <h3 data-i18n="ui.fingerHeading">Fingerprint analysis</h3>
               <div class="tooltip-wrapper">
                 <span class="help-icon">?</span>
-                <div class="tooltip">テンキー上の指紋や皮脂の痕跡から、どのキーが押されたかを推定します。<br>各キーをクリックして濃度（0-100）を変更できます。</div>
+                <div class="tooltip" data-i18n="ui.fingerTooltip">Fingerprint hint.</div>
               </div>
             </div>
             <div id="finger-grid" class="finger-grid"></div>
             <div class="form-row">
-              <label for="finger-threshold">検出閾値 (>=)</label>
+              <label for="finger-threshold" data-i18n="ui.fingerThresholdLabel">Detection threshold (&gt;=)</label>
               <input id="finger-threshold" type="number" min="0" max="100" value="30" />
             </div>
             <div class="buttons">
-              <button id="analyze-finger" class="primary">解析</button>
-              <button id="clear-finger">クリア</button>
+              <button id="analyze-finger" class="primary" data-i18n="ui.analyzeBtn">Analyze</button>
+              <button id="clear-finger" data-i18n="ui.clearBtn">Clear</button>
             </div>
             <div id="finger-result" class="result-box"></div>
           </div>
 
-          <!-- 熱解析 -->
+          <!-- Thermal -->
           <div class="card attack-card">
             <div class="label-with-help">
-              <h3>🌡️ 熱解析</h3>
+              <h3 data-i18n="ui.thermalHeading">Thermal analysis</h3>
               <div class="tooltip-wrapper">
                 <span class="help-icon">?</span>
-                <div class="tooltip">サーマルカメラで入力直後の温度変化を検出します。<br>押されたキーは温度が高く、時間とともに冷却します。</div>
+                <div class="tooltip" data-i18n="ui.thermalTooltip">Thermal hint.</div>
               </div>
             </div>
-            <p class="helper-text">テンキーをクリックしてPINを入力 → 経過時間スライダーで温度減衰を確認</p>
+            <p class="helper-text" data-i18n="ui.thermalHelper">Thermal helper text.</p>
             <div id="thermal-keypad" class="finger-grid"></div>
             <div class="thermal-controls mt-12">
-              <label for="time-since">経過時間 (s)</label>
+              <label for="time-since" data-i18n="ui.thermalTimeLabel">Elapsed time (s)</label>
               <input id="time-since" type="range" min="0" max="60" value="0" />
               <span id="time-since-value">0s</span>
             </div>
             <canvas id="thermal-canvas" width="300" height="300" class="thermal-canvas"></canvas>
             <div class="buttons mt-12">
-              <button id="analyze-thermal" class="primary">解析</button>
-              <button id="clear-thermal">クリア</button>
+              <button id="analyze-thermal" class="primary" data-i18n="ui.analyzeBtn">Analyze</button>
+              <button id="clear-thermal" data-i18n="ui.clearBtn">Clear</button>
             </div>
             <div id="thermal-result" class="result-box"></div>
           </div>
 
-          <!-- 音響解析 -->
+          <!-- Acoustic -->
           <div class="card attack-card">
             <div class="label-with-help">
-              <h3>🔊 音響解析</h3>
+              <h3 data-i18n="ui.audioHeading">Acoustic analysis</h3>
               <div class="tooltip-wrapper">
                 <span class="help-icon">?</span>
-                <div class="tooltip">PIN入力時の打鍵音から、音のピーク数を検出してPINの桁数を推定します。<br>テンキー（数字関係なし）を押すか、音声ファイルを読み込ませてください。</div>
+                <div class="tooltip" data-i18n="ui.audioTooltip">Acoustic hint.</div>
               </div>
             </div>
             <div id="audio-keypad" class="finger-grid"></div>
             <div class="info-box mt-12">
-              打鍵回数: <strong id="audio-tap-count">0</strong>
+              <span data-i18n="ui.audioTapCountLabel">Keypresses:</span> <strong id="audio-tap-count">0</strong>
             </div>
             <div class="form-row mt-12">
               <div class="label-with-help">
-                <label>音声ファイル</label>
+                <label data-i18n="ui.audioFileLabel">Audio file</label>
                 <div class="tooltip-wrapper">
                   <span class="help-icon">?</span>
-                  <div class="tooltip">PIN入力時の打鍵音を録音した音声ファイル（MP3、WAV等）をアップロード。<br>波形から音のピーク（打鍵回数）を検出し、PINの桁数を推定します。</div>
+                  <div class="tooltip" data-i18n="ui.audioFileTooltip">Upload a keypress recording.</div>
                 </div>
               </div>
               <input id="audio-file" type="file" accept="audio/*" />
             </div>
             <div class="buttons">
-              <button id="analyze-audio" class="primary">解析</button>
-              <button id="clear-audio">クリア</button>
+              <button id="analyze-audio" class="primary" data-i18n="ui.analyzeBtn">Analyze</button>
+              <button id="clear-audio" data-i18n="ui.clearBtn">Clear</button>
             </div>
             <div id="audio-result" class="result-box"></div>
           </div>
 
-          <!-- 盗撮・ショルダーハッキング -->
+          <!-- Shoulder surfing -->
           <div class="card attack-card">
             <div class="label-with-help">
-              <h3>📹 盗撮解析</h3>
+              <h3 data-i18n="ui.videoHeading">Shoulder-surfing analysis</h3>
               <div class="tooltip-wrapper">
                 <span class="help-icon">?</span>
-                <div class="tooltip">カメラ盗撮やショルダーハッキングで覗き見ます。<br>視点や誤差によって検出精度が変わります。</div>
+                <div class="tooltip" data-i18n="ui.videoTooltip">Video hint.</div>
               </div>
             </div>
             <div id="video-keypad" class="finger-grid"></div>
             <div class="info-box mt-12">
-              入力PIN: <strong id="video-pin-display">****</strong>
+              <span data-i18n="ui.videoPinLabel">Input PIN:</span> <strong id="video-pin-display">****</strong>
             </div>
             <div class="form-row mt-12">
               <div class="label-with-help">
-                <label>視点</label>
+                <label data-i18n="ui.videoAngleLabel">Viewpoint</label>
                 <div class="tooltip-wrapper">
                   <span class="help-icon">?</span>
-                  <div class="tooltip"><strong>真上:</strong> 監視カメラが真上に設置された理想条件。すべての数字を検出可能。<br><strong>斜め:</strong> 肩越しや斜めからの撮影。信頼度-30%、検出数が最大50%削減。</div>
+                  <div class="tooltip" data-i18n="ui.videoAngleTooltip">Overhead vs tilted.</div>
                 </div>
               </div>
               <select id="video-angle">
-                <option value="top">真上（高精度）</option>
-                <option value="tilt">斜め（精度-30%、検出数減）</option>
+                <option value="top" data-i18n="ui.videoAngleTop">Overhead (high accuracy)</option>
+                <option value="tilt" data-i18n="ui.videoAngleTilt">Tilted (accuracy -30%, fewer detections)</option>
               </select>
             </div>
             <div class="form-row">
               <div class="label-with-help">
-                <label for="pixel-error">視角誤差(px)</label>
+                <label for="pixel-error" data-i18n="ui.pixelErrorLabel">View-angle error (px)</label>
                 <div class="tooltip-wrapper">
                   <span class="help-icon">?</span>
-                  <div class="tooltip">カメラ解像度・距離・手振れ等による座標検出の不正確さ。<br><strong>0-20px:</strong> 低誤差、信頼度ペナルティのみ<br><strong>20px超:</strong> 高誤差、検出数が半減し信頼度も大幅低下</div>
+                  <div class="tooltip" data-i18n="ui.pixelErrorTooltip">Pixel error hint.</div>
                 </div>
               </div>
               <input id="pixel-error" type="number" min="0" max="50" value="8" />
             </div>
             <div class="buttons">
-              <button id="analyze-video" class="primary">解析</button>
-              <button id="clear-video">クリア</button>
+              <button id="analyze-video" class="primary" data-i18n="ui.analyzeBtn">Analyze</button>
+              <button id="clear-video" data-i18n="ui.clearBtn">Clear</button>
             </div>
             <div id="video-result" class="result-box"></div>
           </div>
         </div>
 
-        <!-- 右側：統合分析 -->
+        <!-- Right: integrated analysis -->
         <div class="analysis-panel">
           <div class="card">
-            <h3>📊 統合分析</h3>
+            <h3 data-i18n="ui.analysisHeading">Integrated analysis</h3>
             <div class="buttons mb-16">
-              <button id="run-sim" class="primary">全手法を統合</button>
-              <button id="export-sim">エクスポート</button>
-              <button id="push-to-calc">PINパターン計算へ転送</button>
+              <button id="run-sim" class="primary" data-i18n="ui.runSim">Integrate all methods</button>
+              <button id="export-sim" data-i18n="ui.exportSim">Export</button>
+              <button id="push-to-calc" data-i18n="ui.pushToCalc">Push to PIN pattern calculation</button>
             </div>
 
-            <!-- レーダーチャート -->
+            <!-- Radar chart -->
             <div class="panel-section">
-              <h4 class="subheading-pad">攻撃手法の有効性</h4>
+              <h4 class="subheading-pad" data-i18n="ui.radarHeading">Effectiveness of each method</h4>
               <div id="radar-chart-container" class="radar-container">
                 <canvas id="radar-chart" width="320" height="320" class="full-canvas"></canvas>
               </div>
             </div>
 
-            <!-- 専門家のヒント -->
+            <!-- Expert hints -->
             <div class="panel-section">
-              <h4 class="subheading">💡 専門家のヒント</h4>
-              <div id="expert-hints" class="result-box expert-box">
-                各攻撃手法を実行後、「全手法を統合」を押してください。
+              <h4 class="subheading" data-i18n="ui.expertHints">Expert hints</h4>
+              <div id="expert-hints" class="result-box expert-box" data-i18n="ui.simInitialHint">
+                Run each attack method, then press "Integrate all methods".
               </div>
             </div>
 
-            <!-- PINパターンランキング -->
+            <!-- PIN ranking -->
             <div>
-              <h4 class="subheading">🎯 推定PINランキング</h4>
-              <div id="pin-ranking" class="pin-ranking">
-                解析実行後に表示されます
+              <h4 class="subheading" data-i18n="ui.pinRankingHeading">Estimated PIN ranking</h4>
+              <div id="pin-ranking" class="pin-ranking" data-i18n="ui.rankingInitial">
+                Shown after an analysis is run.
               </div>
             </div>
 
-            <!-- 統合結果サマリー -->
+            <!-- Summary -->
             <div class="summary-box">
-              <div class="result-row"><strong>候補集合:</strong> <span id="sim-candidates">—</span></div>
-              <div class="result-row"><strong>推定桁数:</strong> <span id="sim-length">—</span></div>
-              <div class="result-row"><strong>順序確度:</strong> <span id="sim-order-confidence">—</span></div>
+              <div class="result-row"><strong data-i18n="ui.simCandidatesLabel">Candidate set:</strong> <span id="sim-candidates">—</span></div>
+              <div class="result-row"><strong data-i18n="ui.simLengthLabel">Estimated length:</strong> <span id="sim-length">—</span></div>
+              <div class="result-row"><strong data-i18n="ui.simOrderLabel">Order confidence:</strong> <span id="sim-order-confidence">—</span></div>
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- TAB: セキュリティ -->
+    <!-- TAB: Security -->
     <section id="tab-sec" class="tab-panel hidden">
       <div class="panel two-col">
         <div class="card">
-          <h3>各攻撃への対策</h3>
+          <h3 data-i18n="ui.secHeading">Countermeasures per attack</h3>
           <div class="card-mini">
-            <h4>🔍 指紋解析</h4>
+            <h4 data-i18n="ui.secFingerTitle">Fingerprint</h4>
             <ul>
-              <li>わかる: 押されたキーの候補集合</li>
-              <li>わからない: 正確な順序（通常）</li>
-              <li>有効条件: 表面がヌルっとしていて時間が短い場合</li>
+              <li data-i18n="ui.secFingerKnow">Known: candidate keys.</li>
+              <li data-i18n="ui.secFingerUnknown">Unknown: order.</li>
+              <li data-i18n="ui.secFingerCondition">Effective conditions.</li>
             </ul>
           </div>
 
           <div class="card-mini">
-            <h4>🌡️ 熱解析</h4>
+            <h4 data-i18n="ui.secThermalTitle">Thermal</h4>
             <ul>
-              <li>わかる: 押した直後は温度差で順序のヒント</li>
-              <li>限界: 時間経過・複数回押下で判定困難</li>
+              <li data-i18n="ui.secThermalKnow">Known: order hints.</li>
+              <li data-i18n="ui.secThermalLimit">Limits.</li>
             </ul>
           </div>
 
           <div class="card-mini">
-            <h4>🔊 音響解析</h4>
+            <h4 data-i18n="ui.secAudioTitle">Acoustic</h4>
             <ul>
-              <li>わかる: 打鍵回数（桁数）</li>
-              <li>わからない: 押した数字（部屋の反響等で困難）</li>
+              <li data-i18n="ui.secAudioKnow">Known: PIN length.</li>
+              <li data-i18n="ui.secAudioUnknown">Unknown: digit identity.</li>
             </ul>
           </div>
 
           <div class="card-mini">
-            <h4>📹 盗撮解析（ショルダーハッキングを含む）</h4>
+            <h4 data-i18n="ui.secVideoTitle">Shoulder-surfing</h4>
             <ul>
-              <li>わかる: 視点・距離に応じて入力されたキーの位置</li>
-              <li>限界: 角度・解像度・手での隠蔽により精度低下</li>
-              <li>対策: 入力時に手で覆う、画面を傾ける</li>
+              <li data-i18n="ui.secVideoKnow">Known: pressed-key positions.</li>
+              <li data-i18n="ui.secVideoLimit">Limits.</li>
+              <li data-i18n="ui.secVideoDefense">Defense.</li>
             </ul>
           </div>
         </div>
 
         <div class="card">
-          <h3>ランダムテンキーのデモ</h3>
+          <h3 data-i18n="ui.randomHeading">Randomized keypad demo</h3>
           <div class="canvas-slim">
             <canvas id="random-keypad" width="260" height="320" class="full-canvas"></canvas>
           </div>
           <div class="buttons mt-12">
-            <button id="shuffle-keypad">シャッフル</button>
-            <button id="reset-keypad">リセット</button>
+            <button id="shuffle-keypad" data-i18n="ui.shuffleBtn">Shuffle</button>
+            <button id="reset-keypad" data-i18n="ui.resetBtn">Reset</button>
           </div>
 
-          <!-- 入力表示 -->
+          <!-- Input display -->
           <div class="input-container">
             <div class="row-between">
-              <strong class="row-label">入力内容:</strong>
-              <button id="clear-hand-input" class="clear-mini">クリア</button>
+              <strong class="row-label" data-i18n="ui.inputLabel">Input:</strong>
+              <button id="clear-hand-input" class="clear-mini" data-i18n="ui.clearMiniBtn">Clear</button>
             </div>
             <div id="hand-cover-input" class="pin-display"></div>
           </div>
 
-          <!-- 手で隠すモード -->
+          <!-- Hand-cover mode -->
           <div class="cover-box">
             <label class="inline-check">
               <input type="checkbox" id="hand-cover-mode" />
-              <span class="cover-label">✋ 手で隠すモード（入力後すぐマスク）</span>
+              <span class="cover-label" data-i18n="ui.handCoverLabel">Hand-cover mode</span>
             </label>
           </div>
 
-          <small class="rand-note">ランダム配置は盗撮・指紋攻撃への難易度を上げます。</small>
+          <small class="rand-note" data-i18n="ui.randNote">A random layout makes shoulder-surfing and fingerprint attacks harder.</small>
         </div>
       </div>
 
       <div class="card mt-20">
-        <h3>実運用チェックリスト</h3>
+        <h3 data-i18n="ui.checklistHeading">Operational checklist</h3>
         <ul class="checklist">
-          <li><input type="checkbox" disabled /> 入力時は手で押し隠す / 画面でテンキーを覆う</li>
-          <li><input type="checkbox" disabled /> ATMではランダム表示テンキー（採用されている場合あり）を使う</li>
-          <li><input type="checkbox" disabled /> 重要な端末は複合認証 (カード+PIN) を採用</li>
-          <li><input type="checkbox" disabled /> 端末の表面は定期的に清掃し、指紋痕跡を残さない</li>
+          <li><input type="checkbox" disabled /> <span data-i18n="ui.checklist1">Checklist item 1.</span></li>
+          <li><input type="checkbox" disabled /> <span data-i18n="ui.checklist2">Checklist item 2.</span></li>
+          <li><input type="checkbox" disabled /> <span data-i18n="ui.checklist3">Checklist item 3.</span></li>
+          <li><input type="checkbox" disabled /> <span data-i18n="ui.checklist4">Checklist item 4.</span></li>
         </ul>
       </div>
     </section>
@@ -392,7 +389,7 @@
 
   <footer class="app-footer">
     <div class="footer">
-      🔗 GitHubリポジトリはこちら（ <a href="https://github.com/ipusiron/pin-threat-simulator" target="_blank" rel="noopener">ipusiron/pin-threat-simulator</a> ）
+      <span data-i18n="ui.footer">GitHub repository</span>: <a href="https://github.com/ipusiron/pin-threat-simulator" target="_blank" rel="noopener">ipusiron/pin-threat-simulator</a>
     </div>
   </footer>
   <script type="module" src="script.js"></script>
