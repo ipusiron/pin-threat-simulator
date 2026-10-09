@@ -77,6 +77,17 @@ Open the demo and try it directly in your browser.
 3. Press "Integrate all methods" on the right panel to see the radar chart, expert hints, and the estimated PIN ranking
 4. Press "Push to PIN pattern calculation" to forward the result to the calc tab
 
+#### Try the acoustic analyzer with the bundled sample
+
+- The "Try sample" button on the acoustic card fetches the bundled `assets/samples/pin-taps-4.wav` (four taps, ~1.6 seconds) from the same origin and runs it through the existing peak-detection path
+- To record your own sample: a quiet room, the device microphone, keep taps at least 0.3 seconds apart, keep the file under 20 MB, and use a format the browser's `decodeAudioData` accepts (typically WAV / MP3 / OGG / AAC)
+
+#### Share the calc state via a link
+
+- The "Copy shareable link" button on the calc tab copies a URL whose `#` fragment carries the candidate set, length, mode, duplicates, wildcards, and language
+- If the clipboard call fails, an input field appears under the button with the URL so you can select it manually
+- Opening the shared link reproduces the same state (useful for classroom or training distribution)
+
 ### 3. Security
 
 1. Review the "known / unknown / defense" summary for each attack method

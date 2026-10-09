@@ -272,14 +272,34 @@ window._attackResults = {
 ### レーダーチャートスコアへの統合
 
 ```javascript
+// pin-engine.js
 video: results.video
-  ? Math.min(100, results.video.candidates.length * 15 + results.video.confidence * 0.5)
+  ? radarScore(results.video.candidates.length, results.video.confidence)
   : 0
+// radarScore(n, c) = Math.min(100, n * 15 + c * 0.5)
 ```
 
 - 検出数が主要因子（1 桁あたり +15 pt）
 - 信頼度は補助的要素（×0.5 の重み）
 - 4 桁全検出 + 信頼度 100% の場合、`4×15 + 100×0.5 = 110` → 100（上限クランプ）
+
+### スコア計算の集約（第3弾で `pin-engine.js` へ移管）
+
+`simRun()` と `generatePINRanking()` と `generateExpertHints()` は、
+以下の純粋関数を呼ぶだけになっています。式を変えるときは `pin-engine.js`
+と `test/engine.test.js`（README の4例の検算と `rankPins` の重み）を同時に
+更新します。
+
+| 関数 | 役割 |
+| --- | --- |
+| `videoConfidence({viewpoint, pixelErr})` | 盗撮解析の信頼度 `100 - anglePenalty - min(50, pixelErr×1.5)` |
+| `radarScore(n, c)` | レーダーの単一軸スコア `min(100, n×15 + c×0.5)` |
+| `methodScores(results)` | 4手法のレーダーチャートスコア |
+| `rankPins(pins, results)` | 候補PINの合計スコア（`RANK_WEIGHTS` を使用） |
+| `hintLevel(scores)` | 平均スコアから `'high'` / `'mid'` / `'low'` を返す |
+
+スコアの重みは `RANK_WEIGHTS` としてエクスポート済みで、変更時はテストも
+同時に更新します。
 
 ---
 

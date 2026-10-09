@@ -256,11 +256,12 @@ test('shoulder-surfing confidence + score examples match the engine', () => {
   const enCaseCount = (readmeEn.match(/^Case \d:/gm) || []).length;
   assert.equal(enCaseCount, 4, `README.en.md has ${enCaseCount} 'Case N:' headings (expected 4)`);
 
-  // TECHNICAL.md must at least mention videoAccuracy and the formula.
+  // TECHNICAL.md must at least mention videoAccuracy and the radar-score
+  // formula (either the inlined math or a reference to radarScore()).
   assert.ok(technical.includes('videoAccuracy'), 'TECHNICAL.md missing videoAccuracy');
-  assert.ok(technical.includes('candidates.length * 15 + results.video.confidence * 0.5')
-    || technical.includes('candidates.length × 15')
-    || technical.includes('results.video.candidates.length * 15'),
+  assert.ok(technical.includes('radarScore')
+    || technical.includes('× 15 + ')
+    || technical.includes('* 15 + '),
     'TECHNICAL.md missing the radar-score formula for video');
 });
 
