@@ -7,7 +7,7 @@
 
 import {
   computeCandidates, parseWildcards,
-  countPeaks, videoAccuracy, PEAK_DEFAULTS,
+  countPeaks, videoAccuracy, PEAK_DEFAULTS, thermalDecay,
 } from './pin-engine.js';
 import {t, translateStep} from './pts-messages.js';
 
@@ -307,14 +307,16 @@ function bootstrap(){
   /* -----------------------
      Thermal keypad (thermal analysis)
      ----------------------- */
-  // Real-time thermal decay simulation with linear cooling (1°C/second)
+  // Real-time thermal decay simulation driven by the exponential model in
+  // pin-engine.js: T(t) = T0 * exp(-t / tau), with tau = 20s. The UI calls
+  // `thermalDecay()` so the on-screen cooling curve matches the engine.
   let thermalDecayInterval = null; // Interval ID for automatic decay
   let thermalStartTime = null; // Timestamp when input started
 
   /**
    * Thermal keypad: Click to increase temperature
    * Temperature increases by 10°C per click, max 40°C
-   * Automatically starts real-time decay animation
+   * Automatically starts real-time decay animation (exponential, tau=20s)
    */
   const thermalKeypadKeys = createKeypad('thermal-keypad', (node)=>{
     // Add 10 degrees per click, max 40 degrees (realistic range)
@@ -322,7 +324,7 @@ function bootstrap(){
     baseTemps[parseInt(node.dataset.idx)] = node._temp;
     node.querySelector('.density').textContent = Math.round(node._temp);
 
-    // Reset time slider to 0 and start real-time decay (1 degree/second)
+    // Reset time slider to 0 and start real-time exponential decay (tau=20s)
     el('time-since').value = 0;
     el('time-since-value').textContent = '0s';
     thermalStartTime = Date.now();
@@ -344,7 +346,7 @@ function bootstrap(){
 
   /**
    * Start real-time thermal decay animation
-   * Temperature decreases by 1°C per second (linear cooling model)
+   * Uses the engine's exponential model: T(t) = T0 * exp(-t / tau), tau = 20s
    * Updates slider, keypad displays, and thermal canvas every second
    * Auto-stops after 60 seconds
    */
@@ -362,8 +364,8 @@ function bootstrap(){
       el('time-since').value = elapsed;
       el('time-since-value').textContent = elapsed + 's';
 
-      // Calculate decayed temperatures: linear decay at 1°C/second
-      const currentTemps = baseTemps.map(t => Math.max(0, t - elapsed));
+      // Exponential decay (tau=20s) via the pure engine function
+      const currentTemps = baseTemps.map(t => thermalDecay(t, elapsed));
 
       // Update temperature displays on keypad
       thermalKeypadKeys.forEach((node, i)=>{
@@ -471,8 +473,8 @@ function bootstrap(){
     // Stop automatic decay when user manually adjusts slider
     stopThermalDecay();
 
-    // Calculate decayed temps: 1 degree per second
-    const currentTemps = baseTemps.map(t => Math.max(0, t - s));
+    // Exponential decay (tau=20s) via the engine function
+    const currentTemps = baseTemps.map(t => thermalDecay(t, s));
 
     // Update keypad displays
     thermalKeypadKeys.forEach((node, i)=>{
@@ -693,7 +695,7 @@ function bootstrap(){
   /**
    * Thermal Analysis
    * Simulates thermal imaging detection of recently pressed keys
-   * Uses linear cooling model: temp(t) = max(0, initial_temp - t) at 1°C/second
+   * Uses the engine's exponential cooling model: T(t) = T0 * exp(-t / tau), tau=20s
    * Sorts keys by temperature to estimate digit order (higher temp = more recent)
    * Order confidence calculated as ratio of hottest to second-hottest key
    */
@@ -704,8 +706,8 @@ function bootstrap(){
     // Use current elapsed time
     const timeS = Number(el('time-since').value);
 
-    // Calculate current temperatures (1 degree per second decay)
-    const thermalTemps = baseTemps.map(t => Math.max(0, t - timeS));
+    // Current temperatures via the engine's exponential decay (tau=20s)
+    const thermalTemps = baseTemps.map(t => thermalDecay(t, timeS));
 
     const thermalPairs = thermalTemps.map((t,i)=>({i,t})).sort((a,b)=>b.t-a.t);
     const candidates = thermalPairs.filter(p=>p.t>3).slice(0,6).map(p=>fingerKeys[p.i].label).filter(lbl=>/\d/.test(lbl));
