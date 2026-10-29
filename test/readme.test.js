@@ -288,7 +288,12 @@ test('No list item in README starts with a bolded label like "- **name**"', () =
 // unaffected) opens the use-case section in both languages, before the
 // general uses and Scenario 1. Every number in its three items is recomputed
 // from pin-engine.js; the UI wording and defaults they quote are read from
-// pts-messages.js, index.html and script.js.
+// pts-messages.js, index.html and script.js. Each number is looked up inside
+// a sentence fragment that also carries the words on both sides of it and the
+// conditions it was computed under (purchases, length, presses, tau,
+// viewpoint, error, input PIN), so changing a digit or a condition in either
+// README fails. The script.js lines that produce the on-screen results are
+// pinned as plain strings, like the other checks against script.js.
 const html = readFileSync(join(root, 'index.html'), 'utf8');
 const script = readFileSync(join(root, 'script.js'), 'utf8');
 
@@ -322,23 +327,43 @@ test('Use cases: the unique-use block opens the section in README.md and README.
   assert.equal(enItems().length, 3);
 });
 
+/** Fail with the missing fragment when `s` does not contain each one verbatim. */
+function hasFragments(s, frags, lang){
+  for(const f of frags) assert.ok(s.includes(f), `${lang}: missing "${f}"`);
+}
+const numberWord = ['zero', 'one', 'two', 'three', 'four', 'five', 'six'];
+
 test('Unique use 1 (collection): must-include / allowed-set ratios match the engine', () => {
   const kinds = [1, 2, 3, 4, 5, 6];
+  const K = kinds.length;
+  const [n6, n8] = [6, 8]; // number of purchases = PIN length
   const count = (pinLen, mode) =>
     computeCandidates({digits: kinds, pinLen, mode, allowDup: true, wilds: null}).count;
-  const [must6, all6, must8, all8] = [count(6, 'must'), count(6, 'allowed'), count(8, 'must'), count(8, 'allowed')];
+  const [must6, all6, must8, all8] = [count(n6, 'must'), count(n6, 'allowed'), count(n8, 'must'), count(n8, 'allowed')];
   assert.deepEqual([must6, all6, must8, all8], [720, 46656, 191520, 1679616]);
   const pct = (a, b) => (100 * a / b).toFixed(1) + '%';
-  assert.deepEqual([pct(must6, all6), pct(must8, all8)], ['1.5%', '11.4%']);
-  assert.match(html, /id="pin-length"[^>]*max="8"/, 'the PIN length input must accept 8');
+  const [p6, p8] = [pct(must6, all6), pct(must8, all8)];
+  assert.deepEqual([p6, p8], ['1.5%', '11.4%']);
+  const maxLen = Number(html.match(/id="pin-length"[^>]*max="(\d+)"/)[1]);
+  assert.ok(maxLen >= n8, `the PIN length input must accept ${n8} (max=${maxLen})`);
   const ja = jaItems()[0];
   const en = enItems()[0];
-  for(const s of [ja, en]){
-    for(const n of [must6, all6, must8, all8]) assert.ok(s.includes(comma(n)), `missing ${comma(n)}: ${s.slice(0, 40)}`);
-    for(const p of [pct(must6, all6), pct(must8, all8)]) assert.ok(s.includes(p), `missing ${p}: ${s.slice(0, 40)}`);
-  }
-  assert.ok(ja.includes(`${comma(must8)}÷${comma(all8)}`) && ja.includes('サイコロを8回'));
-  assert.ok(en.includes(`${comma(must8)} / ${comma(all8)}`) && en.includes('8 rolls of a die'));
+  hasFragments(ja, [
+    `: ${K}種類あるおまけを全部集めたい人が、`,
+    `として、${n6}個買う場合（候補集合1〜${K}・重複あり・${n6}桁）を計算する。`,
+    `。全種類がそろう並びは${comma(must6)}通り、全部の並びは${comma(all6)}通りで、確率は約${p6}になる。`,
+    `。${n8}個（${n8}桁）に増やしても${comma(must8)}÷${comma(all8)}で約${p8}にとどまる。`,
+    `。サイコロを${n8}回振って1〜${K}の目がすべて出る確率も同じ計算で求まる。`,
+    `。[${n8}個の場合の共有リンク](`,
+  ], 'ja');
+  hasFragments(en, [
+    `: someone who wants all ${K} kinds of a bonus toy works out`,
+    `, calculate buying ${n6} (candidate set 1-${K}, duplicates allowed, length ${n6}).`,
+    `. The sequences that contain every kind number ${comma(must6)} out of ${comma(all6)} in total, a chance of about ${p6}.`,
+    `. Even with ${n8} purchases (length ${n8}) it is only ${comma(must8)} / ${comma(all8)}, about ${p8}.`,
+    `. The chance that ${n8} rolls of a die show every face from 1 to ${K} comes from the same calculation.`,
+    `. The [shareable link for ${n8} purchases](`,
+  ], 'en');
   // The shareable link opens the 8-purchase must-include count (a link with
   // digits= runs the calculation once on load).
   assert.ok(script.includes("parseHash(window.location.hash).digits){ el('calc-btn').click(); }"));
@@ -346,7 +371,7 @@ test('Unique use 1 (collection): must-include / allowed-set ratios match the eng
     const m = s.match(/\(https:\/\/ipusiron\.github\.io\/pin-threat-simulator\/(#[^)\s]+)\)/);
     assert.ok(m, `shareable link missing (${lang})`);
     const h = parseHash(m[1]);
-    assert.deepEqual(h, {digits: '123456', len: 8, mode: 'must', allowDup: true, lang});
+    assert.deepEqual(h, {digits: kinds.join(''), len: n8, mode: 'must', allowDup: true, lang});
     const r = computeCandidates({
       digits: h.digits.split('').map(Number), pinLen: h.len, mode: h.mode, allowDup: h.allowDup, wilds: null,
     });
@@ -360,78 +385,166 @@ test('Unique use 1 (collection): must-include / allowed-set ratios match the eng
 });
 
 test('Unique use 2 (RC discharge): thermalDecay readings match the engine', () => {
-  const T0 = 40; // 4 clicks of +10, capped at 40
-  assert.ok(script.includes('Math.min((node._temp || 0) + 10, 40)'));
-  assert.match(html, /id="time-since" type="range" min="0" max="60"/);
-  // RC = 200 kOhm x 100 uF = 20 s, the engine's default tau.
-  assert.ok(Math.abs(200e3 * 100e-6 - 20) < 1e-9);
-  assert.ok(Math.abs(thermalDecay(T0, 20) - T0 * Math.exp(-1)) < 1e-12);
-  // First whole second at which the rounded on-screen value reaches half.
+  // A click on a thermal key adds `step`, capped at T0.
+  const press = script.match(/node\._temp = Math\.min\(\(node\._temp \|\| 0\) \+ (\d+), (\d+)\);/);
+  assert.ok(press, 'thermal key click handler not found in script.js');
+  const [step, T0] = press.slice(1).map(Number);
+  assert.deepEqual([step, T0], [10, 40]);
+  const presses = T0 / step;
+  // The engine's default tau is 20 s, and the UI never passes another value.
+  const tau = 20;
+  for(const t of [0, 7, 14, tau, 3 * tau]){
+    assert.ok(Math.abs(thermalDecay(T0, t) - T0 * Math.exp(-t / tau)) < 1e-12, `thermalDecay(${T0}, ${t})`);
+  }
+  const argCounts = [...script.matchAll(/thermalDecay\(([^()]+)\)/g)].map((m) => m[1].split(',').length);
+  assert.ok(argCounts.length >= 2 && argCounts.every((n) => n === 2), `thermalDecay calls in script.js: ${argCounts}`);
+  // Moving the slider rewrites each key with the rounded value; the label
+  // next to the slider shows the seconds only.
+  for(const s of [
+    "el('time-since-value').textContent = s + 's';",
+    'const currentTemps = baseTemps.map(t => thermalDecay(t, s));',
+    "node.querySelector('.density').textContent = Math.round(currentTemps[i]);",
+  ]) assert.ok(script.includes(s), `script.js: ${s}`);
+  const sliderMax = Number(html.match(/id="time-since" type="range" min="0" max="(\d+)"/)[1]);
+  assert.ok(sliderMax >= 3 * tau, `the slider must reach ${3 * tau} s (max=${sliderMax})`);
+  // RC = 200 kOhm x 100 uF = 20 s, the same as tau.
+  const [kOhm, uF] = [200, 100];
+  const rc = kOhm * uF / 1000;
+  assert.equal(rc, tau);
+  // First whole second at which the rounded value on the key reaches half.
   let half = 0;
   while(Math.round(thermalDecay(T0, half)) > T0 / 2) half++;
   assert.equal(half, 14);
-  const at20 = thermalDecay(T0, 20);
-  const at60 = thermalDecay(T0, 60);
+  const at1 = thermalDecay(T0, tau);
+  const at3 = thermalDecay(T0, 3 * tau);
   const p = (v) => (100 * v / T0).toFixed(1) + '%';
-  assert.deepEqual([Math.round(at20), at20.toFixed(2), p(at20)], [15, '14.72', '36.8%']);
-  assert.deepEqual([Math.round(at60), at60.toFixed(2), p(at60)], [2, '1.99', '5.0%']);
-  const halfLife = (20 * Math.log(2)).toFixed(1);
-  const discharged = (100 * (1 - at60 / T0)).toFixed(0) + '%';
+  assert.deepEqual([Math.round(at1), at1.toFixed(2), p(at1)], [15, '14.72', '36.8%']);
+  assert.deepEqual([Math.round(at3), at3.toFixed(2), p(at3)], [2, '1.99', '5.0%']);
+  const halfLife = (tau * Math.log(2)).toFixed(1);
+  const discharged = (100 * (1 - at3 / T0)).toFixed(0) + '%';
   assert.deepEqual([halfLife, discharged], ['13.9', '95%']);
   const ja = jaItems()[1];
   const en = enItems()[1];
-  for(const s of [ja, en]){
-    for(const n of [at20.toFixed(2), p(at20), at60.toFixed(2), p(at60), halfLife, discharged]){
-      assert.ok(s.includes(n), `missing ${n}: ${s.slice(0, 40)}`);
-    }
-  }
-  assert.ok(ja.includes(`${T0}にし`) && ja.includes(`${half}秒で半分の${T0 / 2}`));
-  assert.ok(ja.includes(`20秒（時定数の1倍）で${Math.round(at20)}`) && ja.includes(`60秒（3倍）で${Math.round(at60)}`));
-  assert.ok(ja.includes('200kΩ') && ja.includes('100μF') && ja.includes('RC=20秒'));
-  assert.ok(en.includes(`reach ${T0}`) && en.includes(`${T0 / 2} (half) at ${half} seconds`));
-  assert.ok(en.includes(`${Math.round(at20)} at 20 seconds`) && en.includes(`${Math.round(at60)} at 60 seconds`));
-  assert.ok(en.includes('200 kΩ') && en.includes('100 μF') && en.includes('RC = 20 seconds'));
-  assert.ok(translate('ja', 'ui.thermalTimeLabel').startsWith('経過時間') && ja.includes('経過時間のスライダー'));
-  assert.ok(translate('en', 'ui.thermalTimeLabel').startsWith('Elapsed time') && en.includes('elapsed-time slider'));
+  hasFragments(ja, [
+    ': 電子工作をする人が、熱解析の減衰の式 `T₀ × exp(-t/τ)` を、RC回路の放電の式 `V₀ × exp(-t/RC)` と同じ形の式として読む。',
+    `。時定数τ=${tau}秒は、${kOhm}kΩの抵抗と${uF}μFのコンデンサーをつないだ回路（RC=${rc}秒）にあたる。`,
+    `。τは${tau}秒で固定なので、ほかの抵抗とコンデンサーの組では、${tau}秒を時定数1つ分として読み替える。`,
+    `。熱解析のテンキーの1つのキーを${presses}回押して${T0}にし、経過時間のスライダーを動かす。`,
+    `。キーの表示は${half}秒で半分の${T0 / 2}、${tau}秒（時定数の1倍）で${Math.round(at1)}（計算では${at1.toFixed(2)}、${p(at1)}）、`
+      + `${3 * tau}秒（3倍）で${Math.round(at3)}（${at3.toFixed(2)}、${p(at3)}）になる。`,
+    `。半分になるまでの時間は計算では${tau}×ln2≈${halfLife}秒で、表示が${half}秒で${T0 / 2}になることと合う。`,
+    `。「時定数の3倍で約${discharged}放電する」という電子回路の目安を、スライダーを動かしたときのキーの数字で確かめられる。`,
+  ], 'ja');
+  hasFragments(en, [
+    ': someone building circuits reads the thermal decay formula `T0 * exp(-t / tau)`'
+      + ' as having the same form as the RC discharge formula `V0 * exp(-t / RC)`.',
+    `. The time constant tau = ${tau} seconds matches a circuit with a ${kOhm} kΩ resistor`
+      + ` and a ${uF} μF capacitor (RC = ${rc} seconds).`,
+    `. Tau is fixed at ${tau} seconds, so for other resistor and capacitor values, read ${tau} seconds as one time constant.`,
+    `. Press one key of the thermal keypad ${presses} times to reach ${T0} and move the elapsed-time slider.`,
+    `. The key shows ${T0 / 2} (half) at ${half} seconds,`
+      + ` ${Math.round(at1)} at ${tau} seconds (one time constant; ${at1.toFixed(2)} by calculation, ${p(at1)}),`
+      + ` and ${Math.round(at3)} at ${3 * tau} seconds (three time constants; ${at3.toFixed(2)}, ${p(at3)}).`,
+    `. By calculation the time to fall to half is ${tau} × ln 2 ≈ ${halfLife} seconds,`
+      + ` which agrees with the display reaching ${T0 / 2} at ${half} seconds.`,
+    '. The number on the key as you move the slider lets you check the electronics rule of thumb'
+      + ` that a capacitor is about ${discharged} discharged after three time constants.`,
+  ], 'en');
+  assert.ok(translate('ja', 'ui.thermalTimeLabel').startsWith('経過時間'));
+  assert.ok(translate('en', 'ui.thermalTimeLabel').startsWith('Elapsed time'));
 });
 
 test('Unique use 3 (averaging): a shoulder-surfing-only run tiers as low risk', () => {
-  // UI defaults quoted in the README: overhead viewpoint, 8px error, PIN length 4.
-  assert.match(html, /<select id="video-angle">\s*<option value="top"/);
-  assert.match(html, /id="pixel-error"[^>]*value="8"/);
-  assert.match(html, /id="pin-length"[^>]*value="4"/);
-  const confidence = videoConfidence({viewpoint: 'top', pixelErr: 8});
-  const digits = ['1', '2', '3', '4'];
+  // Defaults the README relies on, read from index.html: the first viewpoint
+  // option, the pixel error and the PIN length.
+  const vp = html.match(/<select id="video-angle">\s*<option value="(\w+)"/)[1];
+  const px = Number(html.match(/id="pixel-error"[^>]*value="(\d+)"/)[1]);
+  const pinLen = Number(html.match(/id="pin-length"[^>]*value="(\d+)"/)[1]);
+  assert.deepEqual([vp, px, pinLen], ['top', 8, 4]);
+  // The script.js paths behind the result: the distinct digits of the input
+  // PIN are the candidates, only a tilted view or an error above 20px drops
+  // any of them, the tier is the engine's hintLevel over the four scores, the
+  // "Danger" hint fires for at most 4 digits at length 4, and the radar plots
+  // each score as a fraction of its outer ring.
+  for(const s of [
+    'let candidates = Array.from(new Set(videoPinInput));',
+    'const confidence = videoConfidence({viewpoint: videoAngle, pixelErr});',
+    "if(videoAngle === 'tilt'){",
+    'if(pixelErr > 20){',
+    'const scores = methodScores(results);',
+    'const level = hintLevel(scores);',
+    "const estimatedLength = results.audio || Number(el('pin-length').value) || 4;",
+    'if(candidates.length <= 4 && length === 4){',
+    "hints.push(t('hint.candidateTight', {len: candidates.length, total: Math.pow(candidates.length, length)}));",
+    'const values = [scores.finger, scores.thermal, scores.audio, scores.video];',
+  ]) assert.ok(script.includes(s), `script.js: ${s}`);
+  // A score of 100 lands on the outermost of the radar's rings.
+  const scales = [...script.matchAll(/const score = values\[i\] \/ (\d+);/g)].map((m) => Number(m[1]));
+  assert.ok(scales.length >= 2 && scales.every((d) => d === 100), `radar scales: ${scales}`);
+  const rings = script.match(/for\(let i=1; i<=(\d+); i\+\+\)\{\s*radarCtx\.beginPath\(\);\s*radarCtx\.arc\(cx, cy, radius \* i\/(\d+),/);
+  assert.ok(rings && rings[1] === rings[2], 'the outermost radar ring must sit at the full radius');
+  assert.ok(px <= 20, 'the default error must keep every detected digit');
+  const pin = '1234';
+  const digits = [...new Set(pin)];
+  const confidence = videoConfidence({viewpoint: vp, pixelErr: px});
   const video = radarScore(digits.length, confidence);
   const scores = methodScores({finger: null, thermal: null, audio: null, video: {candidates: digits, confidence}});
   assert.deepEqual(scores, {finger: 0, thermal: 0, audio: 0, video: 100});
-  const mean = Object.values(scores).reduce((a, b) => a + b, 0) / Object.keys(scores).length;
-  const max = Math.max(...Object.values(scores));
-  assert.deepEqual([mean, hintLevel(scores), max, hintLevel({max})], [25, 'low', 100, 'high']);
+  const vals = Object.values(scores);
+  const methods = vals.length;
+  const mean = vals.reduce((a, b) => a + b, 0) / methods;
+  const max = Math.max(...vals);
+  assert.deepEqual([methods, mean, hintLevel(scores), max, hintLevel({max})], [4, 25, 'low', 100, 'high']);
   // Tier thresholds: strictly above 60 is high, strictly above 30 is mid.
-  assert.deepEqual([60, 61, 30, 31].map((a) => hintLevel({a})), ['mid', 'high', 'low', 'mid']);
-  // The "Danger" hint's brute-force count: 4 digits over length 4.
-  const brute = computeCandidates({digits: [1, 2, 3, 4], pinLen: 4, mode: 'allowed', allowDup: true, wilds: null}).count;
+  const [hi, mid] = [60, 30];
+  assert.deepEqual([hi, hi + 1, mid, mid + 1].map((a) => hintLevel({a})), ['mid', 'high', 'low', 'mid']);
+  // The "Danger" hint's brute-force count: the 4 digits over the PIN length.
+  const brute = computeCandidates({digits: digits.map(Number), pinLen, mode: 'allowed', allowDup: true, wilds: null}).count;
   assert.equal(brute, 256);
+  // UI words the README quotes: the viewpoint option and the radar axis.
+  const topJa = translate('ja', 'ui.videoAngleTop').split('（')[0];
+  const topEn = translate('en', 'ui.videoAngleTop').split(' (')[0].toLowerCase();
+  const axisJa = translate('ja', 'radar.video');
+  const axisEn = translate('en', 'radar.video');
+  assert.deepEqual([topJa, topEn, axisJa, axisEn], ['真上', 'overhead', '盗撮', 'Video']);
+  const runJa = translate('ja', 'ui.runSim');
+  const runEn = translate('en', 'ui.runSim');
+  assert.deepEqual([runJa, runEn], ['全手法を統合', 'Integrate all methods']);
   const ja = jaItems()[2];
   const en = enItems()[2];
-  assert.ok(ja.includes('平均が60を超えると高リスク、30を超えると中リスク'));
-  assert.ok(ja.includes('誤差8px') && ja.includes('1234'));
-  assert.ok(ja.includes(`上限の${video}`) && ja.includes(`平均は${mean}`));
-  assert.ok(ja.includes(`候補数字が${digits.length}個で${brute}通り`));
-  assert.ok(ja.includes(`最大値でまとめれば${max}で高リスク`));
-  assert.ok(en.includes('above 60 is high risk, above 30 is medium risk'));
-  assert.ok(en.includes('8px error') && en.includes('1234'));
-  assert.ok(en.includes(`cap of ${video}`) && en.includes(`the mean is ${mean}`));
-  assert.ok(en.includes(`only ${digits.length} candidate digits remain and a brute force over ${brute} combinations`));
-  assert.ok(en.includes(`maximum would give ${max} and high risk`));
+  assert.ok(ja.startsWith('- 平均でまとめると危険度が満点の項目が埋もれることを確かめる（評価表の設計）: '), ja.slice(0, 40));
+  assert.ok(en.startsWith('- Seeing how averaging buries a maximum risk score (designing evaluation sheets): '), en.slice(0, 60));
+  hasFragments(ja, [
+    `。段階は${methods}手法のスコアの平均で決まり、平均が${hi}を超えると高リスク、${mid}を超えると中リスク、それ以外は低リスクになる。`,
+    `。盗撮解析だけを、初期設定の${topJa}・誤差${px}pxのまま入力PINを${pin}にして解析し、「${runJa}」を押す。`,
+    `。レーダーチャートでは${axisJa}の点が外周（上限の${video}）に届くが、`
+      + `ほかの${methods - 1}手法の点は中心（0）にあるので平均は${mean}となり、「低リスク」と表示される。`,
+    `。同じ画面には、候補数字が${digits.length}個で${brute}通りの総当たりが現実的だという「危険」の警告も並ぶ。`,
+    `。最大値でまとめれば${max}で高リスクになる。`,
+    '。1つの手段だけで破られる対象を平均で採点すると、危険度が満点の項目が埋もれることを、評価表を作る前に数字で確かめられる。',
+  ], 'ja');
+  hasFragments(en, [
+    `. The tier comes from the mean of the ${numberWord[methods]} method scores:`
+      + ` above ${hi} is high risk, above ${mid} is medium risk, otherwise low risk.`,
+    `. Run only the shoulder-surfing analysis with the default ${topEn} viewpoint and ${px}px error`
+      + ` on the input PIN ${pin}, then press "${runEn}".`,
+    `. On the radar chart the point on the ${axisEn} axis reaches the outer ring (the cap of ${video}),`
+      + ` but the points of the other ${numberWord[methods - 1]} methods stay at the center (0),`
+      + ` so the mean is ${mean} and the panel shows "Low risk".`,
+    `. The same panel also shows the "Danger" warning that only ${digits.length} candidate digits remain`
+      + ` and a brute force over ${brute} combinations is realistic.`,
+    `. Combining by the maximum would give ${max} and high risk.`,
+    '. Before designing a sheet, you can check in numbers that averaging buries a maximum risk score'
+      + ' when a single method alone is enough to break the target.',
+  ], 'en');
   // UI wording quoted in the README exists in the dictionary.
   const tightJa = translate('ja', 'hint.candidateTight', {len: digits.length, total: brute});
   const tightEn = translate('en', 'hint.candidateTight', {len: digits.length, total: brute});
-  assert.ok(translate('ja', 'ui.runSim') === '全手法を統合' && ja.includes('「全手法を統合」'));
-  assert.ok(translate('ja', 'hint.riskLow').includes('低リスク') && ja.includes('「低リスク」'));
-  assert.ok(tightJa.includes('危険') && tightJa.includes(`${brute}通り`) && ja.includes('「危険」'));
-  assert.ok(translate('en', 'ui.runSim') === 'Integrate all methods' && en.includes('"Integrate all methods"'));
-  assert.ok(translate('en', 'hint.riskLow').includes('Low risk') && en.includes('"Low risk"'));
-  assert.ok(tightEn.includes('Danger') && tightEn.includes(`${brute} combinations`) && en.includes('"Danger"'));
+  assert.ok(translate('ja', 'ui.videoHeading').includes('盗撮解析'));
+  assert.ok(translate('en', 'ui.videoHeading').includes('Shoulder-surfing analysis'));
+  assert.ok(translate('ja', 'hint.riskLow').includes('低リスク'));
+  assert.ok(translate('en', 'hint.riskLow').includes('Low risk'));
+  assert.ok(tightJa.includes('危険') && tightJa.includes(`${digits.length}個のみ`) && tightJa.includes(`${brute}通り`));
+  assert.ok(tightEn.includes('Danger') && tightEn.includes(`Only ${digits.length} candidate digits`)
+    && tightEn.includes(`${brute} combinations`));
 });
