@@ -455,6 +455,14 @@ Step 5: Resume normal input
 The tool fits a range of scenarios across learning, work, daily life, hobbies, research, and combinations with other tools.
 The simulations are simplified models and do not warrant the actual attack success rates on real hardware.
 
+Ways of using this tool in particular
+
+- Estimating the chance of completing a collection (collecting and probability): someone who wants all 6 kinds of a bonus toy works out the chance of getting every kind. Treat the PIN length as the number of purchases and the candidate set as the kinds of toys, and divide the must-include count by the allowed-set count. Assuming every kind is equally likely, calculate buying 6 (candidate set 1-6, duplicates allowed, length 6). The sequences that contain every kind number 720 out of 46,656 in total, a chance of about 1.5%. Even with 8 purchases (length 8) it is only 191,520 / 1,679,616, about 11.4%. The chance that 8 rolls of a die show every face from 1 to 6 comes from the same calculation. The [shareable link for 8 purchases](https://ipusiron.github.io/pin-threat-simulator/#digits=123456&len=8&mode=must&dup=1&lang=en) opens the tool with the must-include result already shown.
+- Reading capacitor discharge in multiples of the time constant (electronics): someone building circuits reads the thermal decay formula `T0 * exp(-t / tau)` as having the same form as the RC discharge formula `V0 * exp(-t / RC)`. The time constant tau = 20 seconds matches a circuit with a 200 kΩ resistor and a 100 μF capacitor (RC = 20 seconds). Press one key of the thermal keypad 4 times to reach 40 and move the elapsed-time slider. The display shows 20 (half) at 14 seconds, 15 at 20 seconds (one time constant; 14.72 by calculation, 36.8%), and 2 at 60 seconds (three time constants; 1.99, 5.0%). By calculation the time to fall to half is 20 × ln 2 ≈ 13.9 seconds, which agrees with the display reaching 20 at 14 seconds. The numbers on the slider let you check the electronics rule of thumb that a capacitor is about 95% discharged after three time constants.
+- Seeing how averaging buries a full score (designing evaluation sheets): someone designing a supplier evaluation sheet or an internal checklist tries the integrated analysis's tiering as a sample of how to combine scores. The tier comes from the mean of the four method scores: above 60 is high risk, above 30 is medium risk, otherwise low risk. Run only the shoulder-surfing analysis with the default overhead viewpoint and 8px error on the input PIN 1234, then press "Integrate all methods". The shoulder-surfing score reaches the cap of 100, but the other three methods are 0, so the mean is 25 and the panel shows "Low risk". The same panel also shows the "Danger" warning that only 4 candidate digits remain and a brute force over 256 combinations is realistic. Combining by the maximum would give 100 and high risk. Before designing a sheet, you can check in numbers that averaging buries a full score when one weakness alone is enough to break the target.
+
+General uses
+
 - Education: use in information security classes to let students hand-verify permutations and the inclusion-exclusion principle, then confirm on screen
 - Education: use as a worked example of "number of cases" in a math class, varying length, candidate set, and constraints
 - Work: justify operational rules for facility PINs (length, periodic rotation, keypad cleaning)
@@ -587,7 +595,7 @@ Coverage:
 - `test/html.test.js`: CSP meta, favicon, noscript, `type="module"`, zero full-width punctuation, every `data-i18n` key resolves, no inline styles or handlers
 - `test/contrast.test.js`: WCAG AA (4.5:1) for key foreground / background pairs in both themes
 - `test/format.test.js`: line length and minimum file sizes
-- `test/readme.test.js`: calculation examples, image references, directory block, forbidden words, and English README cross-checks
+- `test/readme.test.js`: calculation examples, image references, directory block, forbidden words, English README cross-checks, and the numbers in "Ways of using this tool in particular" recomputed from the engine
 
 CI runs the same `npm test` for every push and pull request through `.github/workflows/test.yml`.
 

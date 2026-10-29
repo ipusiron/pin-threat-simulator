@@ -12,7 +12,9 @@ import {dirname, join} from 'node:path';
 import {
   computeCandidates, PEAK_DEFAULTS,
   videoConfidence, radarScore,
+  thermalDecay, methodScores, hintLevel, parseHash,
 } from '../pin-engine.js';
+import {translate} from '../pts-messages.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = dirname(here);
@@ -279,4 +281,157 @@ test('No list item in README starts with a bolded label like "- **name**"', () =
   });
   assert.equal(offenders.length, 0,
     `list items with bold labels found:\n${offenders.join('\n')}`);
+});
+
+// --- 12. "このツールならではの使い方" / "Ways of using this tool in particular" ----
+// A plain-text label line (not a heading, so the H2/H3 parity test above is
+// unaffected) opens the use-case section in both languages, before the
+// general uses and Scenario 1. Every number in its three items is recomputed
+// from pin-engine.js; the UI wording and defaults they quote are read from
+// pts-messages.js, index.html and script.js.
+const html = readFileSync(join(root, 'index.html'), 'utf8');
+const script = readFileSync(join(root, 'script.js'), 'utf8');
+
+/** The three items between the unique-use label and the general-use label. */
+function uniqueUseItems(md, h2, label, generalLabel, scenarioHeading){
+  const text = md.replace(/\r\n/g, '\n');
+  const start = text.indexOf(`\n${h2}\n`);
+  assert.ok(start >= 0, `${h2} is missing`);
+  const rest = text.slice(start + h2.length + 2);
+  const end = rest.search(/\n## /);
+  const sec = end < 0 ? rest : rest.slice(0, end);
+  const a = sec.indexOf(`\n${label}\n`);
+  const b = sec.indexOf(`\n${generalLabel}\n`);
+  const c = sec.indexOf(`\n${scenarioHeading}`);
+  assert.ok(a >= 0, `"${label}" label line is missing under ${h2}`);
+  assert.ok(b > a, `"${generalLabel}" must follow "${label}"`);
+  assert.ok(c > b, `${scenarioHeading} must follow "${generalLabel}"`);
+  assert.ok(!/\n- /.test(sec.slice(0, a)), `"${label}" must come before every list item`);
+  const items = sec.slice(a + label.length + 2, b).split('\n').filter((l) => l.startsWith('- '));
+  assert.equal(items.length, 3, `${label}: expected 3 items, got ${items.length}`);
+  return items;
+}
+const jaItems = () => uniqueUseItems(readme, '## 🎯 ユースケース',
+  'このツールならではの使い方', '一般的な使い方', '### シナリオ1');
+const enItems = () => uniqueUseItems(readmeEn, '## 🎯 Use Cases',
+  'Ways of using this tool in particular', 'General uses', '### Scenario 1');
+const comma = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+test('Use cases: the unique-use block opens the section in README.md and README.en.md', () => {
+  assert.equal(jaItems().length, 3);
+  assert.equal(enItems().length, 3);
+});
+
+test('Unique use 1 (collection): must-include / allowed-set ratios match the engine', () => {
+  const kinds = [1, 2, 3, 4, 5, 6];
+  const count = (pinLen, mode) =>
+    computeCandidates({digits: kinds, pinLen, mode, allowDup: true, wilds: null}).count;
+  const [must6, all6, must8, all8] = [count(6, 'must'), count(6, 'allowed'), count(8, 'must'), count(8, 'allowed')];
+  assert.deepEqual([must6, all6, must8, all8], [720, 46656, 191520, 1679616]);
+  const pct = (a, b) => (100 * a / b).toFixed(1) + '%';
+  assert.deepEqual([pct(must6, all6), pct(must8, all8)], ['1.5%', '11.4%']);
+  assert.match(html, /id="pin-length"[^>]*max="8"/, 'the PIN length input must accept 8');
+  const ja = jaItems()[0];
+  const en = enItems()[0];
+  for(const s of [ja, en]){
+    for(const n of [must6, all6, must8, all8]) assert.ok(s.includes(comma(n)), `missing ${comma(n)}: ${s.slice(0, 40)}`);
+    for(const p of [pct(must6, all6), pct(must8, all8)]) assert.ok(s.includes(p), `missing ${p}: ${s.slice(0, 40)}`);
+  }
+  assert.ok(ja.includes(`${comma(must8)}÷${comma(all8)}`) && ja.includes('サイコロを8回'));
+  assert.ok(en.includes(`${comma(must8)} / ${comma(all8)}`) && en.includes('8 rolls of a die'));
+  // The shareable link opens the 8-purchase must-include count (a link with
+  // digits= runs the calculation once on load).
+  assert.ok(script.includes("parseHash(window.location.hash).digits){ el('calc-btn').click(); }"));
+  for(const [s, lang] of [[ja, 'ja'], [en, 'en']]){
+    const m = s.match(/\(https:\/\/ipusiron\.github\.io\/pin-threat-simulator\/(#[^)\s]+)\)/);
+    assert.ok(m, `shareable link missing (${lang})`);
+    const h = parseHash(m[1]);
+    assert.deepEqual(h, {digits: '123456', len: 8, mode: 'must', allowDup: true, lang});
+    const r = computeCandidates({
+      digits: h.digits.split('').map(Number), pinLen: h.len, mode: h.mode, allowDup: h.allowDup, wilds: null,
+    });
+    assert.equal(r.count, must8);
+  }
+  // Mode names quoted in the README exist in the UI dictionary.
+  assert.ok(translate('ja', 'ui.modeMust').startsWith('必須包含モード') && ja.includes('必須包含モード'));
+  assert.ok(translate('ja', 'ui.modeAllowed').startsWith('許容集合モード') && ja.includes('許容集合モード'));
+  assert.ok(translate('en', 'ui.modeMust').startsWith('Must-include mode') && en.includes('must-include'));
+  assert.ok(translate('en', 'ui.modeAllowed').startsWith('Allowed-set mode') && en.includes('allowed-set'));
+});
+
+test('Unique use 2 (RC discharge): thermalDecay readings match the engine', () => {
+  const T0 = 40; // 4 clicks of +10, capped at 40
+  assert.ok(script.includes('Math.min((node._temp || 0) + 10, 40)'));
+  assert.match(html, /id="time-since" type="range" min="0" max="60"/);
+  // RC = 200 kOhm x 100 uF = 20 s, the engine's default tau.
+  assert.ok(Math.abs(200e3 * 100e-6 - 20) < 1e-9);
+  assert.ok(Math.abs(thermalDecay(T0, 20) - T0 * Math.exp(-1)) < 1e-12);
+  // First whole second at which the rounded on-screen value reaches half.
+  let half = 0;
+  while(Math.round(thermalDecay(T0, half)) > T0 / 2) half++;
+  assert.equal(half, 14);
+  const at20 = thermalDecay(T0, 20);
+  const at60 = thermalDecay(T0, 60);
+  const p = (v) => (100 * v / T0).toFixed(1) + '%';
+  assert.deepEqual([Math.round(at20), at20.toFixed(2), p(at20)], [15, '14.72', '36.8%']);
+  assert.deepEqual([Math.round(at60), at60.toFixed(2), p(at60)], [2, '1.99', '5.0%']);
+  const halfLife = (20 * Math.log(2)).toFixed(1);
+  const discharged = (100 * (1 - at60 / T0)).toFixed(0) + '%';
+  assert.deepEqual([halfLife, discharged], ['13.9', '95%']);
+  const ja = jaItems()[1];
+  const en = enItems()[1];
+  for(const s of [ja, en]){
+    for(const n of [at20.toFixed(2), p(at20), at60.toFixed(2), p(at60), halfLife, discharged]){
+      assert.ok(s.includes(n), `missing ${n}: ${s.slice(0, 40)}`);
+    }
+  }
+  assert.ok(ja.includes(`${T0}にし`) && ja.includes(`${half}秒で半分の${T0 / 2}`));
+  assert.ok(ja.includes(`20秒（時定数の1倍）で${Math.round(at20)}`) && ja.includes(`60秒（3倍）で${Math.round(at60)}`));
+  assert.ok(ja.includes('200kΩ') && ja.includes('100μF') && ja.includes('RC=20秒'));
+  assert.ok(en.includes(`reach ${T0}`) && en.includes(`${T0 / 2} (half) at ${half} seconds`));
+  assert.ok(en.includes(`${Math.round(at20)} at 20 seconds`) && en.includes(`${Math.round(at60)} at 60 seconds`));
+  assert.ok(en.includes('200 kΩ') && en.includes('100 μF') && en.includes('RC = 20 seconds'));
+  assert.ok(translate('ja', 'ui.thermalTimeLabel').startsWith('経過時間') && ja.includes('経過時間のスライダー'));
+  assert.ok(translate('en', 'ui.thermalTimeLabel').startsWith('Elapsed time') && en.includes('elapsed-time slider'));
+});
+
+test('Unique use 3 (averaging): a shoulder-surfing-only run tiers as low risk', () => {
+  // UI defaults quoted in the README: overhead viewpoint, 8px error, PIN length 4.
+  assert.match(html, /<select id="video-angle">\s*<option value="top"/);
+  assert.match(html, /id="pixel-error"[^>]*value="8"/);
+  assert.match(html, /id="pin-length"[^>]*value="4"/);
+  const confidence = videoConfidence({viewpoint: 'top', pixelErr: 8});
+  const digits = ['1', '2', '3', '4'];
+  const video = radarScore(digits.length, confidence);
+  const scores = methodScores({finger: null, thermal: null, audio: null, video: {candidates: digits, confidence}});
+  assert.deepEqual(scores, {finger: 0, thermal: 0, audio: 0, video: 100});
+  const mean = Object.values(scores).reduce((a, b) => a + b, 0) / Object.keys(scores).length;
+  const max = Math.max(...Object.values(scores));
+  assert.deepEqual([mean, hintLevel(scores), max, hintLevel({max})], [25, 'low', 100, 'high']);
+  // Tier thresholds: strictly above 60 is high, strictly above 30 is mid.
+  assert.deepEqual([60, 61, 30, 31].map((a) => hintLevel({a})), ['mid', 'high', 'low', 'mid']);
+  // The "Danger" hint's brute-force count: 4 digits over length 4.
+  const brute = computeCandidates({digits: [1, 2, 3, 4], pinLen: 4, mode: 'allowed', allowDup: true, wilds: null}).count;
+  assert.equal(brute, 256);
+  const ja = jaItems()[2];
+  const en = enItems()[2];
+  assert.ok(ja.includes('平均が60を超えると高リスク、30を超えると中リスク'));
+  assert.ok(ja.includes('誤差8px') && ja.includes('1234'));
+  assert.ok(ja.includes(`上限の${video}`) && ja.includes(`平均は${mean}`));
+  assert.ok(ja.includes(`候補数字が${digits.length}個で${brute}通り`));
+  assert.ok(ja.includes(`最大値でまとめれば${max}で高リスク`));
+  assert.ok(en.includes('above 60 is high risk, above 30 is medium risk'));
+  assert.ok(en.includes('8px error') && en.includes('1234'));
+  assert.ok(en.includes(`cap of ${video}`) && en.includes(`the mean is ${mean}`));
+  assert.ok(en.includes(`only ${digits.length} candidate digits remain and a brute force over ${brute} combinations`));
+  assert.ok(en.includes(`maximum would give ${max} and high risk`));
+  // UI wording quoted in the README exists in the dictionary.
+  const tightJa = translate('ja', 'hint.candidateTight', {len: digits.length, total: brute});
+  const tightEn = translate('en', 'hint.candidateTight', {len: digits.length, total: brute});
+  assert.ok(translate('ja', 'ui.runSim') === '全手法を統合' && ja.includes('「全手法を統合」'));
+  assert.ok(translate('ja', 'hint.riskLow').includes('低リスク') && ja.includes('「低リスク」'));
+  assert.ok(tightJa.includes('危険') && tightJa.includes(`${brute}通り`) && ja.includes('「危険」'));
+  assert.ok(translate('en', 'ui.runSim') === 'Integrate all methods' && en.includes('"Integrate all methods"'));
+  assert.ok(translate('en', 'hint.riskLow').includes('Low risk') && en.includes('"Low risk"'));
+  assert.ok(tightEn.includes('Danger') && tightEn.includes(`${brute} combinations`) && en.includes('"Danger"'));
 });
