@@ -18,7 +18,7 @@ category_en:
   - Authentication
   - PIN Cracking
 
-difficulty: 5
+difficulty: 3
 
 tags:
   - pin
